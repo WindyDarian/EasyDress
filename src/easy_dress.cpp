@@ -251,7 +251,9 @@ MStatus easyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		MVector ray_direction;
 		
 		view.viewToWorld(lasso[i].h, lasso[i].v, ray_origin, ray_direction);
-		auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
+		  // * is dot product
+		auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction / ((selectionPoint - ray_origin).normal() * ray_direction);
+		//auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
 		world_points.push_back(world_point);
 	}
 
