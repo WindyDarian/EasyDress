@@ -1,9 +1,14 @@
 // using the lassoTool from Maya 2016 devkit as reference
+// this is just an in-progress work
+// may not even run
+// Windy Darian (Ruoyu Fan)   Mar 3, 2016
+
 
 #include <maya/MIOStream.h>
 #include <math.h>
 #include <stdlib.h>
 #include <list>
+#include <string>
 
 #include <maya/MFnPlugin.h>
 #include <maya/MString.h>
@@ -29,6 +34,8 @@
 #include <maya/MItMeshPolygon.h>
 
 #include <maya/MUIDrawManager.h>
+#include <maya/MItGeometry.h>
+#include <maya/MFnTransform.h>
 
 //#ifdef _WIN32
 LPCSTR lassoToolCursor = "lassoToolCursor.cur";
@@ -67,7 +74,7 @@ int xycompare( coord *p1, coord *p2 )
 
 const int initialSize		= 1024;
 const int increment			=  256;
-const char helpString[]		= "drag mouse to select points by encircling";
+const char helpString[]		= "drag mouse to draw strokes";
 
 class easyDressTool : public MPxContext
 {
@@ -115,7 +122,7 @@ easyDressTool::easyDressTool()
 //			  lassoToolCursorMask_bits)
 //#endif
 {
-	setTitleString ( "Lasso Pick" );
+	setTitleString ( "EasyDress Sketch" );
 	
 	// set the initial state of the cursor
 	//setCursor(lassoCursor);
@@ -212,166 +219,217 @@ MStatus easyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	}
 	//view.viewToObjectSpace
 
-
-	//// calculate points in world space
-	//MVector
-	//view.viewToWorld(short)
-
-	// We have a non-zero sized lasso.  Close the lasso, and sort
-	// all the points on it.
-	append_lasso(lasso[0].h, lasso[0].v);
-	qsort( &(lasso[0]), num_points, sizeof( coord  ),
-		(int (*)(const void *, const void *))xycompare);
-
-	// Save the state of the current selections.  The "selectFromSceen"
-	// below will alter the active list, and we have to be able to put
-	// it back.
+	// get selection location
 	MGlobal::getActiveSelectionList(incomingList);
+	MItSelectionList iter(incomingList);
+	MPoint selectionPoint(0,0,0);
 
-	// As a first approximation to the lasso, select all components with
-	// the bounding box that just contains the lasso.
-	MGlobal::selectFromScreen( min.h, min.v, max.h, max.v,
-							   MGlobal::kReplaceList );
+	for (; !iter.isDone(); iter.next())
+	{
+		MDagPath dagPath;
+		MObject component;
+		
+		iter.getDagPath(dagPath, component);
+		//if (obj.hasFn(type)) {
+		//	objects.append(obj);
+		//}
+		if (component.hasFn(MFn::kTransform)) {
 
-	// Get the list of selected items from within the bounding box
-	// and create a iterator for them.
-	MGlobal::getActiveSelectionList(boundingBoxList);
-
-	// Restore the active selection list to what it was before we
-	// the "selectFromScreen"
-	MGlobal::setActiveSelectionList(incomingList, MGlobal::kReplaceList);
-
-	// Iterate over the objects within the bounding box, extract the
-	// ones that are within the lasso, and add those to newList.
-	MItSelectionList iter(boundingBoxList);
-	newList.clear();
-
-	bool	foundEntireObjects = false;
-	bool	foundComponents = false;
-
-	for ( ; !iter.isDone(); iter.next() ) {
-		MDagPath	dagPath;
-		MObject		component;
-		MPoint		point;
-		coord		pt;
-		MObject     singleComponent;
-
-		iter.getDagPath( dagPath, component );
-
-		if (component.isNull()) {
-			foundEntireObjects = true;
-			continue; // not a component
-		}
-
-		foundComponents = true;
-
-		switch (component.apiType()) {
-		case MFn::kCurveCVComponent:
-			{
-				MItCurveCV curveCVIter( dagPath, component, &stat );
-				for ( ; !curveCVIter.isDone(); curveCVIter.next() ) {
-					point = curveCVIter.position(MSpace::kWorld, &stat );
-					view.worldToView( point, pt.h, pt.v, &stat );
-					if (!stat) {
-						stat.perror("Could not get position");
-						continue;
-					}
-					if ( point_in_lasso( pt ) ) {
-						singleComponent = curveCVIter.cv();
-						newList.add (dagPath, singleComponent);
-					}
-				}
-				break;
-			}
-
-		case MFn::kSurfaceCVComponent:
-			{
-				MItSurfaceCV surfCVIter( dagPath, component, true, &stat );
-				for ( ; !surfCVIter.isDone(); surfCVIter.next() ) {
-					point = surfCVIter.position(MSpace::kWorld, &stat );
-					view.worldToView( point, pt.h, pt.v, &stat );
-					if (!stat) {
-						stat.perror("Could not get position");
-						continue;
-					}
-					if ( point_in_lasso( pt ) ) {
-						singleComponent = surfCVIter.cv();
-						newList.add (dagPath, singleComponent);
-					}
-				}
-				break;
-			}
-
-		case MFn::kMeshVertComponent:
-			{
-				MItMeshVertex vertexIter( dagPath, component, &stat );
-				for ( ; !vertexIter.isDone(); vertexIter.next() ) {
-					point = vertexIter.position(MSpace::kWorld, &stat );
-					view.worldToView( point, pt.h, pt.v, &stat );
-					if (!stat) {
-						stat.perror("Could not get position");
-						continue;
-					}
-					if ( point_in_lasso( pt ) ) {
-						singleComponent = vertexIter.vertex();
-						newList.add (dagPath, singleComponent);
-					}
-				}
-				break;
-			}
-
-		case MFn::kMeshEdgeComponent:
-			{
-				MItMeshEdge edgeIter( dagPath, component, &stat );
-				for ( ; !edgeIter.isDone(); edgeIter.next() ) {
-					point = edgeIter.center(MSpace::kWorld, &stat );
-					view.worldToView( point, pt.h, pt.v, &stat );
-					if (!stat) {
-						stat.perror("Could not get position");
-						continue;
-					}
-					if ( point_in_lasso( pt ) ) {
-						singleComponent = edgeIter.edge();
-						newList.add (dagPath, singleComponent);
-					}
-				}
-				break;
-			}
-
-		case MFn::kMeshPolygonComponent:
-			{
-				MItMeshPolygon polygonIter( dagPath, component, &stat );
-				for ( ; !polygonIter.isDone(); polygonIter.next() ) {
-					point = polygonIter.center(MSpace::kWorld, &stat );
-					view.worldToView( point, pt.h, pt.v, &stat );
-					if (!stat) {
-						stat.perror("Could not get position");
-						continue;
-					}
-					if ( point_in_lasso( pt ) ) {
-						singleComponent = polygonIter.polygon();
-						newList.add (dagPath, singleComponent);
-					}
-				}
-				break;
-			}
-
-		default:
-#ifdef DEBUG
-			cerr << "Selected unsupported type: (" << component.apiType()
-				 << "): " << component.apiTypeStr() << endl;
-#endif /* DEBUG */
-			continue;
+			MFnTransform fn(component);
+			selectionPoint = fn.getTranslation(MSpace::kWorld);
+			break;
 		}
 	}
 
-	// Warn user if zie is trying to select objects rather than components.
-	if (foundEntireObjects && !foundComponents) {
-		MGlobal::displayWarning("lassoTool can only select components, not entire objects.");
+
+
+	std::list<MPoint> world_points;
+	// calculate points in world space
+	for (unsigned i = 0; i < num_points; i++)
+	{
+		MPoint ray_origin;
+		MVector ray_direction;
+		
+		view.viewToWorld(lasso[i].h, lasso[i].v, ray_origin, ray_direction);
+		auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
+		world_points.push_back(world_point);
 	}
 
-	// Update the selection list as indicated by the modifier keys.
-	MGlobal::selectCommand(newList, listAdjustment);
+	if (world_points.size() > 1)
+	{
+		std::string curveCommand;
+		curveCommand.reserve(world_points.size() * 40 + 7);
+		curveCommand.append("curve");
+		for (auto & p : world_points)
+		{
+			curveCommand.append(" -p ");
+			curveCommand.append(std::to_string(p.x));
+			curveCommand.append(" ");
+			curveCommand.append(std::to_string(p.y));
+			curveCommand.append(" ");
+			curveCommand.append(std::to_string(p.z));
+		}
+		curveCommand.append(";");
+		MGlobal::executeCommand(MString(curveCommand.c_str()));
+	}
+
+
+
+	//// We have a non-zero sized lasso.  Close the lasso, and sort
+	//// all the points on it.
+	////append_lasso(lasso[0].h, lasso[0].v);
+	////qsort( &(lasso[0]), num_points, sizeof( coord  ),
+	////	(int (*)(const void *, const void *))xycompare);
+
+	//// Save the state of the current selections.  The "selectFromSceen"
+	//// below will alter the active list, and we have to be able to put
+	//// it back.
+	//MGlobal::getActiveSelectionList(incomingList);
+
+	//// As a first approximation to the lasso, select all components with
+	//// the bounding box that just contains the lasso.
+	//MGlobal::selectFromScreen( min.h, min.v, max.h, max.v,
+	//						   MGlobal::kReplaceList );
+
+	//// Get the list of selected items from within the bounding box
+	//// and create a iterator for them.
+	//MGlobal::getActiveSelectionList(boundingBoxList);
+
+	//// Restore the active selection list to what it was before we
+	//// the "selectFromScreen"
+	//MGlobal::setActiveSelectionList(incomingList, MGlobal::kReplaceList);
+
+	//// Iterate over the objects within the bounding box, extract the
+	//// ones that are within the lasso, and add those to newList.
+	//MItSelectionList iter(boundingBoxList);
+	//newList.clear();
+
+	//bool	foundEntireObjects = false;
+	//bool	foundComponents = false;
+
+	//for ( ; !iter.isDone(); iter.next() ) {
+	//	MDagPath	dagPath;
+	//	MObject		component;
+	//	MPoint		point;
+	//	coord		pt;
+	//	MObject     singleComponent;
+
+	//	iter.getDagPath( dagPath, component );
+
+	//	if (component.isNull()) {
+	//		foundEntireObjects = true;
+	//		continue; // not a component
+	//	}
+
+	//	foundComponents = true;
+
+//		switch (component.apiType()) {
+//		case MFn::kCurveCVComponent:
+//			{
+//				MItCurveCV curveCVIter( dagPath, component, &stat );
+//				for ( ; !curveCVIter.isDone(); curveCVIter.next() ) {
+//					point = curveCVIter.position(MSpace::kWorld, &stat );
+//					view.worldToView( point, pt.h, pt.v, &stat );
+//					if (!stat) {
+//						stat.perror("Could not get position");
+//						continue;
+//					}
+//					if ( point_in_lasso( pt ) ) {
+//						singleComponent = curveCVIter.cv();
+//						newList.add (dagPath, singleComponent);
+//					}
+//				}
+//				break;
+//			}
+//
+//		case MFn::kSurfaceCVComponent:
+//			{
+//				MItSurfaceCV surfCVIter( dagPath, component, true, &stat );
+//				for ( ; !surfCVIter.isDone(); surfCVIter.next() ) {
+//					point = surfCVIter.position(MSpace::kWorld, &stat );
+//					view.worldToView( point, pt.h, pt.v, &stat );
+//					if (!stat) {
+//						stat.perror("Could not get position");
+//						continue;
+//					}
+//					if ( point_in_lasso( pt ) ) {
+//						singleComponent = surfCVIter.cv();
+//						newList.add (dagPath, singleComponent);
+//					}
+//				}
+//				break;
+//			}
+//
+//		case MFn::kMeshVertComponent:
+//			{
+//				MItMeshVertex vertexIter( dagPath, component, &stat );
+//				for ( ; !vertexIter.isDone(); vertexIter.next() ) {
+//					point = vertexIter.position(MSpace::kWorld, &stat );
+//					view.worldToView( point, pt.h, pt.v, &stat );
+//					if (!stat) {
+//						stat.perror("Could not get position");
+//						continue;
+//					}
+//					if ( point_in_lasso( pt ) ) {
+//						singleComponent = vertexIter.vertex();
+//						newList.add (dagPath, singleComponent);
+//					}
+//				}
+//				break;
+//			}
+//
+//		case MFn::kMeshEdgeComponent:
+//			{
+//				MItMeshEdge edgeIter( dagPath, component, &stat );
+//				for ( ; !edgeIter.isDone(); edgeIter.next() ) {
+//					point = edgeIter.center(MSpace::kWorld, &stat );
+//					view.worldToView( point, pt.h, pt.v, &stat );
+//					if (!stat) {
+//						stat.perror("Could not get position");
+//						continue;
+//					}
+//					if ( point_in_lasso( pt ) ) {
+//						singleComponent = edgeIter.edge();
+//						newList.add (dagPath, singleComponent);
+//					}
+//				}
+//				break;
+//			}
+//
+//		case MFn::kMeshPolygonComponent:
+//			{
+//				MItMeshPolygon polygonIter( dagPath, component, &stat );
+//				for ( ; !polygonIter.isDone(); polygonIter.next() ) {
+//					point = polygonIter.center(MSpace::kWorld, &stat );
+//					view.worldToView( point, pt.h, pt.v, &stat );
+//					if (!stat) {
+//						stat.perror("Could not get position");
+//						continue;
+//					}
+//					if ( point_in_lasso( pt ) ) {
+//						singleComponent = polygonIter.polygon();
+//						newList.add (dagPath, singleComponent);
+//					}
+//				}
+//				break;
+//			}
+//
+//		default:
+//#ifdef DEBUG
+//			cerr << "Selected unsupported type: (" << component.apiType()
+//				 << "): " << component.apiTypeStr() << endl;
+//#endif /* DEBUG */
+//			continue;
+//		}
+//	}
+//
+//	// Warn user if zie is trying to select objects rather than components.
+//	if (foundEntireObjects && !foundComponents) {
+//		MGlobal::displayWarning("lassoTool can only select components, not entire objects.");
+//	}
+//
+//	// Update the selection list as indicated by the modifier keys.
+//	MGlobal::selectCommand(newList, listAdjustment);
 
 	// Free the memory that held our lasso points.
 	free(lasso);
