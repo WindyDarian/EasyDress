@@ -5,6 +5,10 @@
     <None Include="LICENSE" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\easy_dress.cpp" />
+    <ClCompile Include="src\plugin_main.cpp" />
+    <ClCompile Include="src\EasyDressTool.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\EasyDressTool.h" />
   </ItemGroup>
 </Project>
