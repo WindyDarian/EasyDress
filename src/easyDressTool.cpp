@@ -10,6 +10,9 @@
 #include <maya/MDagPath.h>
 #include <maya/MFnTransform.h>
 #include <maya/MUIDrawManager.h>
+#include <maya/MFnDagNode.h>
+#include <maya/MFnMesh.h>
+
 
 #include "EasyDressTool.h"
 
@@ -135,23 +138,68 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	MItSelectionList iter(incomingList);
 	MPoint selectionPoint(0, 0, 0);
 
+    MFnMesh * selected_mesh = nullptr;
+
 	for (; !iter.isDone(); iter.next())
 	{
 		MDagPath dagPath;
-		MObject component;
+		auto stat = iter.getDagPath(dagPath); 
 
-		iter.getDagPath(dagPath, component);
+        if (stat)
+        {
+
+            if (dagPath.hasFn(MFn::kTransform))
+            {
+                MFnTransform fn(dagPath);
+                selectionPoint = fn.getTranslation(MSpace::kWorld);
+                dagPath.extendToShape();
+            }
+            
+            if (dagPath.hasFn(MFn::kMesh))
+            {
+                MStatus stat_mesh;
+                selected_mesh = new MFnMesh(dagPath, &stat_mesh);
+                
+                if (stat_mesh)
+                {
+                    break;
+                }
+                else
+                {
+                    selected_mesh = nullptr;
+                    continue;
+                }
+
+                //// We have a mesh so create a vertex and polygon table
+                //// for this object.
+                ////
+                //MFnMesh fnMesh(dagPath);
+                //int vtxCount = fnMesh.numVertices();
+                //int polygonCount = fnMesh.numPolygons();
+                //// we do not need this call anymore, we have the shape.
+                //// dagPath.extendToShape();
+                //MString name = dagPath.fullPathName();
+                //objectNames->append(name);
+                //objectNodeNamesArray.append(fnMesh.name());
+
+                //vertexCounts.append(vtxCount);
+                //polygonCounts.append(polygonCount);
+
+                //objectCount++;
+            }
+        }
 		//if (obj.hasFn(type)) {
 		//	objects.append(obj);
 		//}
-		if (component.hasFn(MFn::kTransform)) {
+		//if (component.hasFn(MFn::kTransform)) {
 
-			MFnTransform fn(component);
-			selectionPoint = fn.getTranslation(MSpace::kWorld);
-			break;
-		}
+		//	MFnTransform fn(component);
+		//	selectionPoint = fn.getTranslation(MSpace::kWorld);
+		//	break;
+		//}
+
 	}
-
+	
 
 
 	std::list<MPoint> world_points;
@@ -190,6 +238,10 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	lasso = (coord*)0;
 	maxSize = 0;
 	num_points = 0;
+
+    if (selected_mesh)
+        delete selected_mesh;
+    selected_mesh = nullptr;
 
 	return MS::kSuccess;
 }
