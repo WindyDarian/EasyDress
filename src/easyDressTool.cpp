@@ -209,29 +209,71 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		MPoint ray_origin;
 		MVector ray_direction;
 
-		view.viewToWorld(lasso[i].h, lasso[i].v, ray_origin, ray_direction);
-		// * is dot product
-		auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction / ((selectionPoint - ray_origin).normal() * ray_direction);
-		//auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
+        view.viewToWorld(lasso[i].h, lasso[i].v, ray_origin, ray_direction);
+
+        MPoint world_point;
+        bool hit = false;
+        
+
+        if (selected_mesh)
+        {
+            //MIntArray faceids;
+            MFloatPoint hit_point;
+            float hit_param;
+            int hit_face;
+            int hit_tri;
+            float hit_bary1;
+            float hit_bary2;
+
+            bool intersected = selected_mesh->closestIntersection(ray_origin,
+                ray_direction,
+                nullptr,
+                nullptr,
+                true,
+                MSpace::kWorld,
+                10000, // maxParam
+                false, // testBothDirections
+                nullptr,
+                hit_point,
+                &hit_param,
+                &hit_face,
+                &hit_tri,
+                &hit_bary1,
+                &hit_bary2
+                );
+
+            if (intersected)
+            {
+                world_point = hit_point;
+                hit = true;
+            }
+        }
+
+        if (!hit)
+        {
+            // * is dot product
+            world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction / ((selectionPoint - ray_origin).normal() * ray_direction);
+            //auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
+        }
 		world_points.push_back(world_point);
 	}
 
 	if (world_points.size() > 1)
 	{
-		std::string curveCommand;
-		curveCommand.reserve(world_points.size() * 40 + 7);
-		curveCommand.append("curve");
+		std::string curve_command;
+		curve_command.reserve(world_points.size() * 40 + 7);
+		curve_command.append("curve");
 		for (auto & p : world_points)
 		{
-			curveCommand.append(" -p ");
-			curveCommand.append(std::to_string(p.x));
-			curveCommand.append(" ");
-			curveCommand.append(std::to_string(p.y));
-			curveCommand.append(" ");
-			curveCommand.append(std::to_string(p.z));
+			curve_command.append(" -p ");
+			curve_command.append(std::to_string(p.x));
+			curve_command.append(" ");
+			curve_command.append(std::to_string(p.y));
+			curve_command.append(" ");
+			curve_command.append(std::to_string(p.z));
 		}
-		curveCommand.append(";");
-		MGlobal::executeCommand(MString(curveCommand.c_str()));
+		curve_command.append(";");
+		MGlobal::executeCommand(MString(curve_command.c_str()));
 	}
 
 	free(lasso);
