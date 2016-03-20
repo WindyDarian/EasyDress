@@ -3,6 +3,7 @@
 #include <maya/MPxContext.h>
 #include <maya/MGlobal.h>
 #include <maya/M3dView.h>
+#include <List>
 
 class coord {
 public:
@@ -23,6 +24,7 @@ public:
 	virtual MStatus	doPress(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context);
 	virtual MStatus	doDrag(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context);
 	virtual MStatus	doRelease(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context);
+	virtual bool isNormal(std::list<MPoint> stroke, MFnMesh selected_mesh);
 
 private:
 	void					append_lasso(short x, short y);

@@ -1,0 +1,57 @@
+if(`window -exists myWindow`){
+    deleteUI myWindow;
+}
+window -title "EasyDress" -widthHeight 400 400 myWindow;
+
+  columnLayout;
+    frameLayout -l "Create Sketch";
+       columnLayout;
+           button -l "Sketch" -command "print \"initSketch\"";
+           checkBox -l "User Defined Stroke";
+       setParent ..;
+       rowLayout -nc 4 -cw4 80 80 80 80;
+           iconTextRadioCollection;
+              iconTextRadioButton -style "iconAndTextVertical" -image1 "contour.xpm" -label "contour";
+              iconTextRadioButton -style "iconAndTextVertical" -image1 "projection.xpm" -label "projection";
+              iconTextRadioButton -style "iconAndTextVertical" -image1 "tangent.xpm" -label "tangent";
+              iconTextRadioButton -style "iconAndTextVertical" -image1 "normal.xpm" -label "normal";
+       setParent ..;
+       rowLayout -nc 2 -cw2 350 400;
+            button -l "Create" -command "callCreateStroke()";
+            button -l "Cancel" -command "cancelUI()";
+       setParent ..;
+    setParent ..;
+    frameLayout -l "Layer Management";
+       columnLayout;
+           text -l "Create and edit Layers";
+           rowLayout -nc 2 -cw2 320 100;
+
+                textScrollList -width 250 -height 100
+                          -allowMultiSelection false
+                          -append "Layer one"
+                          -append "Layer two"
+                          -append "Layer three"
+                          -append "Layer four"
+                          -showIndexedItem 4
+                          "myScrollList";
+                  columnLayout;
+                      button -label "Create Layer" -command "createLayer()";
+                      button -label "Edit Layer" -command "editLayer()";
+                      button -label "Delete Layer" -command "deleteLayer()";
+                  setParent ..;
+               setParent ..;
+       setParent ..;
+
+
+showWindow myWindow;
+global int $index = 1;
+global proc createLayer(int $index){
+      textScrollList -append "Layer $index" -q "myScrollList";
+      $index += 1;
+}
+global proc callCreateStroke(){
+
+}
+global proc cancelUI(){
+    deleteUI myWindow;
+}
