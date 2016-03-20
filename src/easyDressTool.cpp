@@ -169,40 +169,15 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
                     selected_mesh = nullptr;
                     continue;
                 }
-
-                //// We have a mesh so create a vertex and polygon table
-                //// for this object.
-                ////
-                //MFnMesh fnMesh(dagPath);
-                //int vtxCount = fnMesh.numVertices();
-                //int polygonCount = fnMesh.numPolygons();
-                //// we do not need this call anymore, we have the shape.
-                //// dagPath.extendToShape();
-                //MString name = dagPath.fullPathName();
-                //objectNames->append(name);
-                //objectNodeNamesArray.append(fnMesh.name());
-
-                //vertexCounts.append(vtxCount);
-                //polygonCounts.append(polygonCount);
-
-                //objectCount++;
             }
         }
-		//if (obj.hasFn(type)) {
-		//	objects.append(obj);
-		//}
-		//if (component.hasFn(MFn::kTransform)) {
-
-		//	MFnTransform fn(component);
-		//	selectionPoint = fn.getTranslation(MSpace::kWorld);
-		//	break;
-		//}
 
 	}
 	
 
 
 	std::list<MPoint> world_points;
+	unsigned hit_count = 0;
 	// calculate points in world space
 	for (unsigned i = 0; i < num_points; i++)
 	{
@@ -213,7 +188,6 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 
         MPoint world_point;
         bool hit = false;
-        
 
         if (selected_mesh)
         {
@@ -246,11 +220,13 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
             {
                 world_point = hit_point;
                 hit = true;
+				hit_count++;
             }
         }
 
         if (!hit)
         {
+			// project it to the plane where all points are on
             // * is dot product
             world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction / ((selectionPoint - ray_origin).normal() * ray_direction);
             //auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
@@ -260,6 +236,25 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 
 	if (world_points.size() > 1)
 	{
+		if (hit_count == 0)
+		{
+			// classify this curve as shell contour
+			setHelpString("Classified: Shell Contour!");
+
+			// TODO: SHAPE MATCHING!
+		}
+		// TODO: CLASSIFICATION: NORMAL
+		//else if (isNormal(world_points, selected_mesh))
+		//{
+		//	setHelpString("Classified: Normal!");
+		//}
+		// TODO: CLASSIFICATION: TANGENT
+		else
+		{
+			setHelpString("Classified: Shell Projection!");
+		}
+
+
 		std::string curve_command;
 		curve_command.reserve(world_points.size() * 40 + 7);
 		curve_command.append("curve");
