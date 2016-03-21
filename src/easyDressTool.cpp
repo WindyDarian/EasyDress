@@ -4,6 +4,7 @@
 
 #include <string>
 #include <list>
+#include <vector>
 
 #include <maya/MItSelectionList.h>
 #include <maya/MPoint.h>
@@ -174,9 +175,11 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 
 	}
 	
+	std::vector<MPoint> world_points;
+	world_points.reserve(num_points);
+	std::vector<bool> hit_list;
+	hit_list.reserve(num_points);
 
-
-	std::list<MPoint> world_points;
 	unsigned hit_count = 0;
 	// calculate points in world space
 	for (unsigned i = 0; i < num_points; i++)
@@ -185,7 +188,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		MVector ray_direction;
 
         view.viewToWorld(lasso[i].h, lasso[i].v, ray_origin, ray_direction);
-
+		
         MPoint world_point;
         bool hit = false;
 
@@ -232,6 +235,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
             //auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
         }
 		world_points.push_back(world_point);
+		hit_list.push_back(hit);
 	}
 
 	if (world_points.size() > 1)
@@ -244,11 +248,15 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 			// TODO: SHAPE MATCHING!
 		}
 		// TODO: CLASSIFICATION: NORMAL
-		//else if (isNormal(world_points, selected_mesh))
-		//{
-		//	setHelpString("Classified: Normal!");
-		//}
+		else if (is_normal(world_points, hit_list, selected_mesh))
+		{
+			setHelpString("Classified: Normal!");
+		}
 		// TODO: CLASSIFICATION: TANGENT
+		else if (is_tangent())
+        {
+            setHelpString("Classified: Tangent!");
+		}
 		else
 		{
 			setHelpString("Classified: Shell Projection!");
@@ -281,6 +289,54 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
     selected_mesh = nullptr;
 
 	return MS::kSuccess;
+}
+
+
+
+bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list,
+	    const MFnMesh * selected_mesh) const
+{
+	if (!selected_mesh)
+	{
+		return false;
+	}
+
+	if (hit_list[0])
+	{
+		// if starting point is normal
+		//unsigned sample_num = 0;
+		MPoint p0 = lasso[0].toMPoint();
+		MVector current_tang;
+		for (int i = 1; i < tang_samples; i++)
+		{
+			if (i >= num_points) break;
+			current_tang += lasso[i].toMPoint() - p0;
+			//sample_num++;
+		}
+		current_tang.normalize();
+
+		MPoint closest_point;
+		MVector surface_normal;
+		selected_mesh->getClosestPointAndNormal(world_points[0], closest_point, surface_normal, MSpace::kWorld);
+		surface_normal.normalize();
+		MPoint point_plus_normal = closest_point + surface_normal;
+
+		coord cp0, cp1;
+		view.worldToView(closest_point, cp0.h, cp0.v);
+		view.worldToView(point_plus_normal, cp1.h, cp1.v);
+		MVector norm_proj = cp1.toMPoint() - cp0.toMPoint();
+		norm_proj.normalize();
+
+		// * is dot... strange Maya...
+        auto v = 1.0 - (current_tang * norm_proj);
+		return v < normal_threshold;
+	}
+
+}
+
+bool EasyDressTool::is_tangent() const
+{
+	return false;
 }
 
 void EasyDressTool::append_lasso(short x, short y)
@@ -346,4 +402,9 @@ void EasyDressTool::draw_stroke(MHWRender::MUIDrawManager& drawMgr)
 		drawMgr.line2d(MPoint(lasso[i - 1].h, lasso[i - 1].v), MPoint(lasso[i].h, lasso[i].v));
 	}
 	drawMgr.endDrawable();
+}
+
+MPoint coord::toMPoint() const
+{
+	return MPoint(static_cast<double>(h), static_cast<double>(v));
 }
