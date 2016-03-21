@@ -35,7 +35,6 @@ private:
 	void draw_stroke(MHWRender::MUIDrawManager& drawMgr);
 	bool is_normal(const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh) const;
 	bool is_tangent() const;
-    
 	bool					firstDraw;
 	coord					min;
 	coord					max;
