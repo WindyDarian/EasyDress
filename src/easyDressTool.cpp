@@ -19,7 +19,6 @@
 const int initialSize = 1024;
 const int increment = 256;
 const char helpString[] = "drag mouse to draw strokes";
-
 extern "C" int xycompare(coord *p1, coord *p2);
 int xycompare(coord *p1, coord *p2)
 {
@@ -33,6 +32,10 @@ int xycompare(coord *p1, coord *p2)
 		return -1;
 
 	return 0;
+}
+
+MPoint coord::toMPoint()const{
+	return MPoint(static_cast<double>(h), static_cast<double>(v));
 }
 
 EasyDressTool::EasyDressTool()
@@ -171,11 +174,8 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
                 }
             }
         }
-
 	}
 	
-
-
 	std::list<MPoint> world_points;
 	unsigned hit_count = 0;
 	// calculate points in world space
@@ -249,6 +249,9 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		//	setHelpString("Classified: Normal!");
 		//}
 		// TODO: CLASSIFICATION: TANGENT
+		else if (isTangent()){
+			setHelpString("Classified: Tangent Plane!");
+		}
 		else
 		{
 			setHelpString("Classified: Shell Projection!");
@@ -283,6 +286,27 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	return MS::kSuccess;
 }
 
+
+bool EasyDressTool::isTangent()const{
+	double menger_curvature = 0;
+	for (int i = 0; i < num_points-2; i++){
+		MPoint x = lasso[i].toMPoint(); 
+		MPoint y = lasso[i + 1].toMPoint();
+		MPoint z = lasso[i + 2].toMPoint();
+		MVector xy = x - y;
+		MVector zy = z - y;
+		MVector zx = z - x;
+		double area = (xy^zy).length();
+		if (xy.length() != 0 && zy.length() != 0 && zx.length() != 0){
+			menger_curvature += 4 * area / (xy.length()*zy.length()*zx.length());
+		}
+	}
+	menger_curvature /= num_points;
+	if (menger_curvature <= 0.65){
+		return true;
+	}
+	return false;
+}
 void EasyDressTool::append_lasso(short x, short y)
 {
 	int		cy, iy, ix, ydif, yinc, i;
