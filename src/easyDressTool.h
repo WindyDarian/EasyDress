@@ -14,7 +14,12 @@ public:
 	MPoint toMPoint() const;
 };
 
-
+enum EDDrawMode
+{
+	kDefault,
+	kNormal,
+	kTangent,
+};
 
 class EasyDressTool : public MPxContext
 {
@@ -35,16 +40,16 @@ private:
 	void draw_stroke(MHWRender::MUIDrawManager& drawMgr);
 	bool is_normal(const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh) const;
 	bool is_tangent() const;
-	bool					firstDraw;
-	coord					min;
-	coord					max;
-	unsigned				maxSize;
-	unsigned				num_points;
-	coord*					lasso;
+	bool firstDraw;
+	coord min;
+	coord max;
+	unsigned maxSize;
+	unsigned num_points;
+	coord* lasso;
 	//std::list<coord> points_2d;
-	MGlobal::ListAdjustment	listAdjustment;
-	M3dView 				view;
+	//MGlobal::ListAdjustment	listAdjustment;
+	M3dView view;
 	double normal_threshold = 0.15;
 	int tang_samples = 3;
-
+	EDDrawMode drawMode = EDDrawMode::kDefault;
 };

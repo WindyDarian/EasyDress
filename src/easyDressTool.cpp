@@ -57,26 +57,39 @@ void EasyDressTool::toolOnSetup(MEvent &)
 
 MStatus EasyDressTool::doPress(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context)
 {
-	// Figure out which modifier keys were pressed, and set up the
-	// listAdjustment parameter to reflect what to do with the selected points.
-	if (event.isModifierShift() || event.isModifierControl()) {
-		if (event.isModifierShift()) {
-			if (event.isModifierControl()) {
-				// both shift and control pressed, merge new selections
-				listAdjustment = MGlobal::kAddToList;
-			}
-			else {
-				// shift only, xor new selections with previous ones
-				listAdjustment = MGlobal::kXORWithList;
-			}
-		}
-		else if (event.isModifierControl()) {
-			// control only, remove new selections from the previous list
-			listAdjustment = MGlobal::kRemoveFromList;
-		}
+	//// Figure out which modifier keys were pressed, and set up the
+	//// listAdjustment parameter to reflect what to do with the selected points.
+	//if (event.isModifierShift() || event.isModifierControl()) {
+	//	if (event.isModifierShift()) {
+	//		if (event.isModifierControl()) {
+	//			// both shift and control pressed, merge new selections
+	//			listAdjustment = MGlobal::kAddToList;
+	//		}
+	//		else {
+	//			// shift only, xor new selections with previous ones
+	//			listAdjustment = MGlobal::kXORWithList;
+	//		}
+	//	}
+	//	else if (event.isModifierControl()) {
+	//		// control only, remove new selections from the previous list
+	//		listAdjustment = MGlobal::kRemoveFromList;
+	//	}
+	//}
+	//else {
+	//	listAdjustment = MGlobal::kReplaceList;
+	//}
+
+	if (event.isModifierControl())
+	{
+		drawMode = EDDrawMode::kNormal;
 	}
-	else {
-		listAdjustment = MGlobal::kReplaceList;
+	else if (event.isModifierShift())
+	{
+		drawMode = EDDrawMode::kTangent;
+	}
+	else
+	{
+		drawMode = EDDrawMode::kDefault;
 	}
 
 	// Get the active 3D view.
@@ -178,6 +191,8 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	std::vector<bool> hit_list;
 	hit_list.reserve(num_points);
 
+	bool hit_first = false;
+	bool hit_last = false;
 	unsigned hit_count = 0;
 	// calculate points in world space
 	for (unsigned i = 0; i < num_points; i++)
@@ -222,6 +237,8 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
                 world_point = hit_point;
                 hit = true;
 				hit_count++;
+				if (i == 0) hit_first = true;
+				else if (i == num_points - 1) hit_last = true;
             }
         }
 
@@ -245,12 +262,10 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 
 			// TODO: SHAPE MATCHING!
 		}
-		// TODO: CLASSIFICATION: NORMAL
 		else if (is_normal(world_points, hit_list, selected_mesh))
 		{
 			setHelpString("Classified: Normal!");
 		}
-		// TODO: CLASSIFICATION: TANGENT
 		else if (is_tangent())
         {
             setHelpString("Classified: Tangent Plane!");
@@ -288,8 +303,6 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 
 	return MS::kSuccess;
 }
-
-
 
 bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list,
 	    const MFnMesh * selected_mesh) const
@@ -331,7 +344,6 @@ bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const st
 	}
 
 }
-
 
 bool EasyDressTool::is_tangent()const{
 	double menger_curvature = 0;
