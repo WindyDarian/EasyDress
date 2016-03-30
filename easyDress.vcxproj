@@ -149,6 +149,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\EDMath.cpp" />
     <ClCompile Include="src\EasyDressTool.cpp" />
     <ClCompile Include="src\plugin_main.cpp" />
   </ItemGroup>
@@ -157,6 +158,7 @@
     <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\EDMath.h" />
     <ClInclude Include="src\EasyDressTool.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

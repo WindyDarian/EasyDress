@@ -2,6 +2,10 @@
 // 
 // Created: Mar 4, 2016
 
+
+
+#include "EasyDressTool.h"
+
 #include <string>
 #include <list>
 #include <vector>
@@ -14,8 +18,8 @@
 #include <maya/MFnDagNode.h>
 #include <maya/MFnMesh.h>
 
+#include "EDMath.h"
 
-#include "EasyDressTool.h"
 
 const int initialSize = 1024;
 const int increment = 256;
@@ -190,9 +194,9 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	world_points.reserve(num_points);
 	std::vector<bool> hit_list;
 	hit_list.reserve(num_points);
+	std::vector<std::pair<MPoint, MVector>> rays;
+	rays.reserve(num_points);
 
-	bool hit_first = false;
-	bool hit_last = false;
 	unsigned hit_count = 0;
 	// calculate points in world space
 	for (unsigned i = 0; i < num_points; i++)
@@ -201,7 +205,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		MVector ray_direction;
 
         view.viewToWorld(lasso[i].h, lasso[i].v, ray_origin, ray_direction);
-		
+		rays.push_back(std::pair<MPoint, MVector>(ray_origin, ray_direction));
         MPoint world_point;
         bool hit = false;
 
@@ -237,8 +241,6 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
                 world_point = hit_point;
                 hit = true;
 				hit_count++;
-				if (i == 0) hit_first = true;
-				else if (i == num_points - 1) hit_last = true;
             }
         }
 
@@ -246,8 +248,9 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
         {
 			// project it to the plane where all points are on
             // * is dot product
-            world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction / ((selectionPoint - ray_origin).normal() * ray_direction);
-            //auto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
+            //world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction / ((selectionPoint - ray_origin).normal() * ray_direction);
+            //a          uto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
+			world_point = EDMath::projectOnPlane(selectionPoint, -ray_direction, ray_origin, ray_direction);
         }
 		world_points.push_back(world_point);
 		hit_list.push_back(hit);
@@ -262,8 +265,9 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 
 			// TODO: SHAPE MATCHING!
 		}
-		else if (is_normal(world_points, hit_list, selected_mesh))
+		else if ((is_normal(world_points, hit_list, selected_mesh) || drawMode == kNormal) && (hit_list[0] || hit_list[num_points-1]))
 		{
+			project_normal(world_points, hit_list, selected_mesh, rays);
 			setHelpString("Classified: Normal!");
 		}
 		else if (is_tangent())
@@ -277,6 +281,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 
 
 		std::string curve_command;
+		curve_command.append("string $slct[]=`ls- sl`;\n");
 		curve_command.reserve(world_points.size() * 40 + 7);
 		curve_command.append("curve");
 		for (auto & p : world_points)
@@ -288,7 +293,8 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 			curve_command.append(" ");
 			curve_command.append(std::to_string(p.z));
 		}
-		curve_command.append(";");
+		curve_command.append(";\n");
+		curve_command.append("select $slct;");
 		MGlobal::executeCommand(MString(curve_command.c_str()));
 	}
 
@@ -343,6 +349,8 @@ bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const st
 		return v < normal_threshold;
 	}
 
+	// todo: last_hit
+
 }
 
 bool EasyDressTool::is_tangent()const{
@@ -375,6 +383,37 @@ bool EasyDressTool::is_tangent()const{
 	}
 	return false;
 }
+
+void EasyDressTool::project_normal(std::vector<MPoint>& world_points, const std::vector<bool>& hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
+{
+	if (!selected_mesh)
+	{
+		return;
+	}
+
+	if (hit_list[0])
+	{
+
+		MPoint closest_point;
+		MVector surface_normal;
+		selected_mesh->getClosestPointAndNormal(world_points[0], closest_point, surface_normal, MSpace::kWorld);
+		surface_normal.normalize();
+
+		auto normal = EDMath::minimumSkewViewplane(rays[0].second, surface_normal);
+		auto point = world_points[0];
+		auto point_num = rays.size();
+
+		for (int i = 0; i < point_num; i++)
+		{
+			world_points[i] = EDMath::projectOnPlane(point, normal, rays[i].first, rays[i].second);
+		}
+
+	}
+	// todo: last hit
+
+}
+
+
 
 void EasyDressTool::append_lasso(short x, short y)
 {

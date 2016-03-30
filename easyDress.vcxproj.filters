@@ -7,8 +7,10 @@
   <ItemGroup>
     <ClCompile Include="src\plugin_main.cpp" />
     <ClCompile Include="src\EasyDressTool.cpp" />
+    <ClCompile Include="src\EDMath.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\EasyDressTool.h" />
+    <ClInclude Include="src\EDMath.h" />
   </ItemGroup>
 </Project>
