@@ -1,14 +1,29 @@
+// =============================================================================
+//
+// EasyDress: a 3D sketching plugin for Maya
+// Copyright (C) 2016  Ruoyu Fan (Windy Darian), Yimeng Xu
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+// =============================================================================
+
 // The main tool for sketching in viewport.
-// 
+//
 // Created: Mar 4, 2016
 
 
-
 #include "EasyDressTool.h"
-
-#include <string>
-#include <list>
-#include <vector>
 
 #include <maya/MItSelectionList.h>
 #include <maya/MPoint.h>
@@ -17,9 +32,14 @@
 #include <maya/MUIDrawManager.h>
 #include <maya/MFnDagNode.h>
 #include <maya/MFnMesh.h>
+#include <maya/MPointArray.h>
 
+#include <nanoflann.hpp>
 #include "EDMath.h"
 
+#include <string>
+#include <list>
+#include <vector>
 
 const int initialSize = 1024;
 const int increment = 256;
@@ -61,27 +81,7 @@ void EasyDressTool::toolOnSetup(MEvent &)
 
 MStatus EasyDressTool::doPress(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context)
 {
-	//// Figure out which modifier keys were pressed, and set up the
-	//// listAdjustment parameter to reflect what to do with the selected points.
-	//if (event.isModifierShift() || event.isModifierControl()) {
-	//	if (event.isModifierShift()) {
-	//		if (event.isModifierControl()) {
-	//			// both shift and control pressed, merge new selections
-	//			listAdjustment = MGlobal::kAddToList;
-	//		}
-	//		else {
-	//			// shift only, xor new selections with previous ones
-	//			listAdjustment = MGlobal::kXORWithList;
-	//		}
-	//	}
-	//	else if (event.isModifierControl()) {
-	//		// control only, remove new selections from the previous list
-	//		listAdjustment = MGlobal::kRemoveFromList;
-	//	}
-	//}
-	//else {
-	//	listAdjustment = MGlobal::kReplaceList;
-	//}
+
 
 	if (event.isModifierControl())
 	{
@@ -160,7 +160,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	for (; !iter.isDone(); iter.next())
 	{
 		MDagPath dagPath;
-		auto stat = iter.getDagPath(dagPath); 
+		auto stat = iter.getDagPath(dagPath);
 
         if (stat)
         {
@@ -171,12 +171,12 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
                 selectionPoint = fn.getTranslation(MSpace::kWorld);
                 dagPath.extendToShape();
             }
-            
+
             if (dagPath.hasFn(MFn::kMesh))
             {
                 MStatus stat_mesh;
                 selected_mesh = new MFnMesh(dagPath, &stat_mesh);
-                
+
                 if (stat_mesh)
                 {
                     break;
@@ -189,13 +189,16 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
             }
         }
 	}
-	
+
 	std::vector<MPoint> world_points;
 	world_points.reserve(num_points);
 	std::vector<bool> hit_list;
 	hit_list.reserve(num_points);
 	std::vector<std::pair<MPoint, MVector>> rays;
 	rays.reserve(num_points);
+
+	// TODO: rebuild kd-tree only when view is changed
+	rebuild_kd(selected_mesh);
 
 	unsigned hit_count = 0;
 	// calculate points in world space
@@ -260,6 +263,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	{
 		if (hit_count == 0)
 		{
+			project_contour(world_points, hit_list, selected_mesh, rays);
 			// classify this curve as shell contour
 			setHelpString("Classified: Shell Contour!");
 
@@ -357,7 +361,7 @@ bool EasyDressTool::is_tangent()const{
 	double menger_curvature = 0;
     unsigned valid_points = 0;
 	for (int i = 0; i < num_points-2; i++){
-        MPoint x = lasso[i].toMPoint(); 
+        MPoint x = lasso[i].toMPoint();
 		MPoint y = lasso[i + 1].toMPoint();
 		MPoint z = lasso[i + 2].toMPoint();
 		MVector xy = x - y;
@@ -413,7 +417,100 @@ void EasyDressTool::project_normal(std::vector<MPoint>& world_points, const std:
 
 }
 
+///
+// Find a point on a camera ray that is nearest to the mesh
+///
+MPoint EasyDressTool::find_point_nearest_to_mesh(const MFnMesh * selected_mesh, const MPoint & ray_origin, const MVector & ray_direction, const coord & screen_coord) const
+{
+	if (!selected_mesh)
+	{
+		return ray_origin;
+	}
 
+	float pt[] = { screen_coord.h , screen_coord.v, 0 };
+	size_t out_index = 0;
+	float out_dist_squared = 0;
+	kd_2d->knnSearch(pt, 1, &out_index, &out_dist_squared);
+
+	// nearest point (I am just using vertex for now) on the mesh
+	auto temp = mesh_pts.pts[out_index];
+	MPoint p_on_mesh(temp.x, temp.y, temp.z);
+
+	auto dist = (ray_direction * (p_on_mesh - ray_origin));
+	if (dist < 0)
+	{
+		return ray_origin;
+	}
+
+	return ray_origin +  dist * ray_direction;
+
+
+}
+
+void EasyDressTool::project_contour(std::vector<MPoint>& world_points, const std::vector<bool>& hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>>& rays)
+{
+	if (!selected_mesh || !kd_2d || world_points.size() < 2)
+	{
+		return;
+	}
+
+	// TODO: with shape matching
+	// TODO: find nearest point on mesh, not vertex
+
+	auto length = rays.size();
+
+	auto s0 = find_point_nearest_to_mesh(selected_mesh, rays[0].first, rays[0].second, lasso[0]);
+	auto sn = find_point_nearest_to_mesh(selected_mesh, rays[length - 1].first, rays[length - 1].second, lasso[length - 1]);
+
+	if (s0.isEquivalent(sn)) return;
+
+	auto d = (sn - s0).normal();
+	auto normal = EDMath::minimumSkewViewplane(rays[0].second, d);
+
+	for (int i = 0; i < length; i++)
+	{
+		world_points[i] = EDMath::projectOnPlane(s0, normal, rays[i].first, rays[i].second);
+	}
+
+}
+
+void EasyDressTool::rebuild_kd(const MFnMesh * selected_mesh)
+{
+	mesh_pts.clear();
+	mesh_pts_2d.clear();
+	if (!selected_mesh)
+	{
+		kd_2d = nullptr;
+		return;
+	}
+
+	MPointArray pts_array;
+	selected_mesh->getPoints(pts_array, MSpace::kWorld);
+
+	auto length = pts_array.length();
+
+	mesh_pts.pts.resize(length);
+	for (int i = 0; i < length; i++)
+	{
+		mesh_pts.pts[i].x = pts_array[i].x;
+		mesh_pts.pts[i].y = pts_array[i].y;
+		mesh_pts.pts[i].z = pts_array[i].z;
+	}
+
+	mesh_pts_2d.pts.resize(length);
+	for (int i = 0; i < length; i++)
+	{
+		short x, y;
+		view.worldToView(pts_array[i], x, y);
+		mesh_pts_2d.pts[i].x = x;
+		mesh_pts_2d.pts[i].y = y;
+		mesh_pts_2d.pts[i].z = 0;
+	}
+
+	kd_2d.reset(new EDMath::KDTree2D(2 /*dim*/, mesh_pts_2d, nanoflann::KDTreeSingleIndexAdaptorParams(10)));
+	kd_2d->buildIndex();
+
+}
 
 void EasyDressTool::append_lasso(short x, short y)
 {

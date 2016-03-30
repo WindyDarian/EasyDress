@@ -12,5 +12,6 @@
   <ItemGroup>
     <ClInclude Include="src\EasyDressTool.h" />
     <ClInclude Include="src\EDMath.h" />
+    <ClInclude Include="include\nanoflann.hpp" />
   </ItemGroup>
 </Project>
