@@ -274,12 +274,15 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 			project_normal(world_points, hit_list, selected_mesh, rays);
 			setHelpString("Classified: Normal!");
 		}
-		else if (is_tangent())
-        {
+		//else if (is_tangent())
+		else if (drawMode == kTangent) 
+		{
+			// TODO: actually use is_tangent the same time as force tangent
             setHelpString("Classified: Tangent Plane!");
 		}
 		else
 		{
+			project_shell(world_points, hit_list, selected_mesh, rays);
 			setHelpString("Classified: Shell Projection!");
 		}
 
@@ -357,7 +360,10 @@ bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const st
 
 }
 
-bool EasyDressTool::is_tangent()const{
+bool EasyDressTool::is_tangent()const
+{
+	// FIXME: curvature has problems.
+	// not very using this function since I am just using SHIFT to force tangent
 	double menger_curvature = 0;
     unsigned valid_points = 0;
 	for (int i = 0; i < num_points-2; i++){
@@ -420,7 +426,7 @@ void EasyDressTool::project_normal(std::vector<MPoint>& world_points, const std:
 ///
 // Find a point on a camera ray that is nearest to the mesh
 ///
-MPoint EasyDressTool::find_point_nearest_to_mesh(const MFnMesh * selected_mesh, const MPoint & ray_origin, const MVector & ray_direction, const coord & screen_coord) const
+MPoint EasyDressTool::find_point_nearest_to_mesh(const MFnMesh * selected_mesh, const MPoint & ray_origin, const MVector & ray_direction, const coord & screen_coord, float & ret_height) const
 {
 	if (!selected_mesh)
 	{
@@ -442,9 +448,11 @@ MPoint EasyDressTool::find_point_nearest_to_mesh(const MFnMesh * selected_mesh, 
 		return ray_origin;
 	}
 
-	return ray_origin +  dist * ray_direction;
+	auto p_on_ray = ray_origin + dist * ray_direction;
 
+	ret_height = (p_on_ray - p_on_mesh).length();
 
+	return p_on_ray;
 }
 
 void EasyDressTool::project_contour(std::vector<MPoint>& world_points, const std::vector<bool>& hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>>& rays)
@@ -458,9 +466,9 @@ void EasyDressTool::project_contour(std::vector<MPoint>& world_points, const std
 	// TODO: find nearest point on mesh, not vertex
 
 	auto length = rays.size();
-
-	auto s0 = find_point_nearest_to_mesh(selected_mesh, rays[0].first, rays[0].second, lasso[0]);
-	auto sn = find_point_nearest_to_mesh(selected_mesh, rays[length - 1].first, rays[length - 1].second, lasso[length - 1]);
+	float dummy;
+	auto s0 = find_point_nearest_to_mesh(selected_mesh, rays[0].first, rays[0].second, lasso[0], dummy);
+	auto sn = find_point_nearest_to_mesh(selected_mesh, rays[length - 1].first, rays[length - 1].second, lasso[length - 1], dummy);
 
 	if (s0.isEquivalent(sn)) return;
 
@@ -472,6 +480,97 @@ void EasyDressTool::project_contour(std::vector<MPoint>& world_points, const std
 		world_points[i] = EDMath::projectOnPlane(s0, normal, rays[i].first, rays[i].second);
 	}
 
+}
+
+//MPoint interpolate_point(const MPoint& p, const MPoint& p_start, const MPoint& p_end, const MPoint& w_start, const MPoint& w_end)
+//{
+//	auto w1 = (p - p_start).length();
+//	auto w2 = (p - p_end).length();
+//
+//	return (w2 * w_start + w1 * w_end) / (w1 + w2);
+//}
+
+double interpolate_height(const MPoint& p, const MPoint& p_start, const MPoint& p_end, double h_start, double h_end)
+{
+	auto w1 = (p - p_start).length();
+	auto w2 = (p - p_end).length();
+
+	return (w2 * h_start + w1 * h_end) / (w1 + w2);
+
+}
+
+///
+// Shell Projection
+///
+void EasyDressTool::project_shell(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
+{
+	if (!selected_mesh || !kd_2d || world_points.size() < 2)
+	{
+		return;
+	}
+
+	// TODO: snaping to a known height and do interpolation
+
+	auto length = rays.size();
+
+	float start_height = 0, end_height = 0;
+	//MPoint s0 = world_points[0];
+	//MPoint sn = world_points[length - 1];
+	//int iter_start = 0, iter_end = length;
+
+	if (!hit_list[0])
+	{
+		world_points[0] = find_point_nearest_to_mesh(selected_mesh, rays[0].first, rays[0].second, lasso[0], start_height);
+	}
+
+	if (!hit_list[length - 1])
+	{
+		world_points[length - 1] = find_point_nearest_to_mesh(selected_mesh, rays[length - 1].first, rays[length - 1].second, lasso[length - 1], end_height);
+	}
+
+	int first_miss = -1, last_miss = -1;
+	for (size_t i = 1; i <= length - 2; i++)
+	{
+		if (!hit_list[i])
+		{
+			if (first_miss == -1)
+				first_miss = i;
+			last_miss = i;
+		}
+		else
+		{
+			// TODO: known heights other than h0 and hn.
+			auto h = interpolate_height(rays[i].first, rays[0].first, rays[length - 1].first, start_height, end_height);
+			world_points[i] = (-rays[i].second) * h + world_points[i];
+
+			if (first_miss != -1 && last_miss != -1)
+			{
+                auto plane_normal = EDMath::minimumSkewViewplane(rays[first_miss - 1].second
+                    , world_points[last_miss + 1] - world_points[first_miss - 1]);
+				for (size_t j = first_miss; j <= last_miss; j++)
+				{
+                    world_points[j] = EDMath::projectOnPlane(world_points[first_miss - 1], plane_normal, rays[j].first, rays[j].second);
+                    
+					//world_points[j] = interpolate_point(rays[j].first, rays[first_miss - 1].first, rays[last_miss + 1].first
+					//	, world_points[first_miss - 1], world_points[last_miss + 1]);
+				}
+			}
+			first_miss = -1;
+			last_miss = -1;
+		}
+	}
+	if (first_miss != -1 && last_miss != -1)
+	{
+        auto plane_normal = EDMath::minimumSkewViewplane(rays[first_miss - 1].second
+            , world_points[last_miss + 1] - world_points[first_miss - 1]);
+        for (size_t j = first_miss; j <= last_miss; j++)
+        {
+            world_points[j] = EDMath::projectOnPlane(world_points[first_miss - 1], plane_normal, rays[j].first, rays[j].second);
+
+            //world_points[j] = interpolate_point(rays[j].first, rays[first_miss - 1].first, rays[last_miss + 1].first
+            //	, world_points[first_miss - 1], world_points[last_miss + 1]);
+        }
+	}
 }
 
 void EasyDressTool::rebuild_kd(const MFnMesh * selected_mesh)
