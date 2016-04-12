@@ -291,6 +291,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		// create the curve
 		std::string curve_command;
 		curve_command.reserve(world_points.size() * 40 + 40);
+		curve_command.append("proc string __ed_draw_curve() { \n");
 		curve_command.append("string $slct[]=`ls- sl`;\n");
 		curve_command.append("string $cv = `curve");
 		for (auto & p : world_points)
@@ -305,8 +306,13 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		curve_command.append("`;\n");
 		// smooth the curve
 		curve_command.append("rebuildCurve -ch 1 -rpo 1 -rt 0 -end 1 -kr 0 -kcp 0 -kep 1 -kt 0 -s 8 -d 3 -tol 0.01 $cv; \n");
-		curve_command.append("select $slct;");
-		MGlobal::executeCommand(MString(curve_command.c_str()));
+		curve_command.append("select $slct; \n");
+		curve_command.append("return $cv; \n } \n");
+		curve_command.append("__ed_draw_curve();");
+
+		MString curve_name;
+		MGlobal::executeCommand(MString(curve_command.c_str()), curve_name);
+		std::cout << curve_name << std::endl;
 	}
 
 	free(lasso);
