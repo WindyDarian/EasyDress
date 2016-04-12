@@ -278,6 +278,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		else if (drawMode == kTangent) 
 		{
 			// TODO: actually use is_tangent the same time as force tangent
+			project_tangent(world_points, hit_list, selected_mesh, rays);
             setHelpString("Classified: Tangent Plane!");
 		}
 		else
@@ -420,12 +421,9 @@ void EasyDressTool::project_normal(std::vector<MPoint>& world_points, const std:
 		{
 			world_points[i] = EDMath::projectOnPlane(point, normal, rays[i].first, rays[i].second);
 		}
-
 	}
 	// todo: last hit
-
 }
-
 ///
 // Find a point on a camera ray that is nearest to the mesh
 ///
@@ -502,7 +500,7 @@ double interpolate_height(const MPoint& p, const MPoint& p_start, const MPoint& 
 
 }
 
-///
+///                 
 // Shell Projection
 ///
 void EasyDressTool::project_shell(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
@@ -515,7 +513,6 @@ void EasyDressTool::project_shell(std::vector<MPoint> & world_points, const std:
 	// TODO: snaping to a known height and do interpolation
 
 	auto length = rays.size();
-
 	float start_height = 0, end_height = 0;
 	//MPoint s0 = world_points[0];
 	//MPoint sn = world_points[length - 1];
@@ -575,7 +572,38 @@ void EasyDressTool::project_shell(std::vector<MPoint> & world_points, const std:
         }
 	}
 }
+// tangent projection
+void EasyDressTool::project_tangent(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
+{
+	if (!selected_mesh || !kd_2d || world_points.size() < 2){
+		return;
+	}
+	auto length = rays.size();
+	//determine the height of the tangent plane and the middle point on that plane
+	//assume the average height is the height of the middle point
+	float h = 0.0;
+	int mid_index = int(length / 2);
+	MPoint nearest_point = find_point_nearest_to_mesh(selected_mesh, rays[mid_index].first, rays[mid_index].second, lasso[mid_index], h);
+	MPoint middle_point = (-rays[mid_index].second)*h + world_points[mid_index];
+ 
+	//project each stroke points on the base layer and get each normal
+	MVector normal;
+	MPoint closest_point;
+	MVector sum_normal = MVector(0.0, 0.0, 0.0);
 
+	for (int i = 0; i < length; i++){
+		selected_mesh->getClosestPointAndNormal(world_points[i], closest_point, normal, MSpace::kWorld);
+		sum_normal += normal;
+	}
+	//calculate the average normal as the tangent plane normal
+	sum_normal = MVector(sum_normal.x / length, sum_normal.y / length, sum_normal.z / length);
+	MVector plane_normal = sum_normal.normal();
+	//project all the point on to the tangent plane
+	for (int i = 0; i < length; i++){
+		world_points[i] = (-rays[i].second) * h + world_points[i];
+		world_points[i] = EDMath::projectOnPlane(middle_point, plane_normal, rays[i].first, rays[i].second);
+	}
+}
 void EasyDressTool::rebuild_kd(const MFnMesh * selected_mesh)
 {
 	mesh_pts.clear();
@@ -585,7 +613,6 @@ void EasyDressTool::rebuild_kd(const MFnMesh * selected_mesh)
 		kd_2d = nullptr;
 		return;
 	}
-
 	MPointArray pts_array;
 	selected_mesh->getPoints(pts_array, MSpace::kWorld);
 
