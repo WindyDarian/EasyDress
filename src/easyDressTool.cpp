@@ -312,9 +312,31 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 
 		MString curve_name;
 		MGlobal::executeCommand(MString(curve_command.c_str()), curve_name);
-		std::cout << curve_name << std::endl;
+		curves.push_back(curve_name);
+		if (curves.size() == 4){
+			std::string surface_command;
+			surface_command.reserve(world_points.size() * 40 + 40);
+			surface_command.append("select -r ");
+			std::list<std::string> curve_names;
+			while (!curves.empty())
+			{
+				curve_names.push_back(curves.front().asChar());
+				surface_command.append(curves.front().asChar());
+				curves.pop_front();
+				surface_command.append(" ");
+			}
+			surface_command.append(";\n");
+			surface_command.append("boundary -ch 1 -or 0 -ep 0 -rn 0 -po 0 -ept 0.01 ");
+			while (!curve_names.empty())
+			{
+				surface_command.append(" ");
+				surface_command.append("\""+curve_names.front()+"\"");
+				curve_names.pop_front();
+			}
+			surface_command.append(";\n");
+			MGlobal::executeCommand(MString(surface_command.c_str()));
+		}
 	}
-
 	free(lasso);
 	lasso = (coord*)0;
 	maxSize = 0;

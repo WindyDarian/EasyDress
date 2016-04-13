@@ -27,6 +27,7 @@
 #include "EDMath.h"
 
 #include <vector>
+#include <List>
 #include <memory>
 
 class MFnMesh;
@@ -92,5 +93,5 @@ private:
 
 	// kd tree for finding nearest point on mesh
 	std::unique_ptr<EDMath::KDTree2D> kd_2d = nullptr;
-
+	std::list<MString> curves;
 };
