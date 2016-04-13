@@ -23,7 +23,7 @@
 #include "EDMath.h"
 
 #include <maya/MPoint.h>
-
+#include <maya/MFnMesh.h>
 
 MPoint EDMath::projectOnPlane
 	(const MPoint & point, const MVector & plane_normal
@@ -55,4 +55,22 @@ MVector EDMath::minimumSkewViewplane(const MPoint & camera, const MPoint & p, co
 {
 	auto r = (p - camera).normal();
 	return d ^ (r ^ d);
+}
+
+double EDMath::distance_to_mesh(const MFnMesh * selected_mesh, const MPoint & p)
+{
+	{
+		if (!selected_mesh)
+		{
+			return 0;
+		}
+
+
+		MPoint p_on_mesh;
+		selected_mesh->getClosestPoint(p, p_on_mesh, MSpace::kWorld);
+		auto ret_height = (p - p_on_mesh).length();
+
+		return ret_height;
+	}
+
 }

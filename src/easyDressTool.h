@@ -75,6 +75,7 @@ private:
 	//void rebuild_kd_3d();
 	void rebuild_kd(const MFnMesh * selected_mesh);
 
+	bool drawing_quad = true;
 	bool firstDraw;
 	coord min;
 	coord max;
@@ -93,5 +94,7 @@ private:
 
 	// kd tree for finding nearest point on mesh
 	std::unique_ptr<EDMath::KDTree2D> kd_2d = nullptr;
-	std::list<MString> curves;
+	std::list<MString> prev_curves;
+	std::list<std::pair<MPoint, MPoint>> prev_curve_start_end;
+	MString prev_surf;
 };

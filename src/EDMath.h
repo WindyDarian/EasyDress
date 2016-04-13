@@ -26,6 +26,8 @@
 
 class MPoint;
 class MVector;
+class MFnMesh;
+
 
 namespace EDMath
 {
@@ -34,6 +36,7 @@ namespace EDMath
 
 	 MVector minimumSkewViewplane(const MVector & ray_direction, const MVector & d);
 	 MVector minimumSkewViewplane(const MPoint & camera, const MPoint & p, const MVector & d);
+	 double distance_to_mesh(const MFnMesh * selected_mesh, const MPoint & p);
 
 	 template <typename T>
 	 struct PointCloud
