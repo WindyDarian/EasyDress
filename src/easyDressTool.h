@@ -23,6 +23,7 @@
 #include <maya/MPxContext.h>
 #include <maya/MGlobal.h>
 #include <maya/M3dView.h>
+#include <maya/MPoint.h>
 
 #include "EDMath.h"
 
@@ -31,7 +32,6 @@
 #include <memory>
 
 class MFnMesh;
-
 
 class coord {
 public:
@@ -45,6 +45,24 @@ enum EDDrawMode
 	kDefault,
 	kNormal,
 	kTangent,
+};
+
+struct DrawnCurve
+{
+	MPoint start;
+	MPoint end;
+	MString name;
+
+	DrawnCurve(const MPoint & start, const MPoint & end, const MString & name);
+};
+
+struct EDAnchor
+{
+	//TODO: snap to anywhere on current curves
+	MPoint point_2D;
+	MPoint point_3D;
+
+	EDAnchor(const MPoint & point_2D, const MPoint & point_3D) : point_2D(point_2D), point_3D(point_3D) {}
 };
 
 class EasyDressTool : public MPxContext
@@ -63,13 +81,15 @@ public:
 
 private:
 	void append_lasso(short x, short y);
+	void update_anchors();
 	void draw_stroke(MHWRender::MUIDrawManager& drawMgr);
-	bool is_normal(const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh) const;
-	bool is_tangent() const;
-	void project_normal(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
-	void project_tangent(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
-	void project_contour(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
-	void project_shell(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
+	bool is_normal(const std::vector<coord> & screen_points, const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh) const;
+	//bool is_tangent() const;
+	MString create_curve(std::vector<coord> & screen_points, MFnMesh* selected_mesh, bool start_known, bool end_known, const MPoint& start_point, MPoint& end_point, bool tangent_mode = false, bool normal_mode = false);
+	void project_normal(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
+	void project_tangent(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
+	void project_contour(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
+	void project_shell(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
 	MPoint find_point_nearest_to_mesh(const MFnMesh * selected_mesh, const MPoint & ray_origin, const MVector & ray_direction, const coord & screen_coord, float & ret_height) const;
 	void rebuild_kd_2d();
 	//void rebuild_kd_3d();
@@ -80,10 +100,11 @@ private:
 	coord min;
 	coord max;
 	unsigned maxSize;
-	unsigned num_points;
-	coord* lasso;
-	//std::list<coord> points_2d;
+
+	std::vector<coord> stroke;
+
 	//MGlobal::ListAdjustment	listAdjustment;
+
 	M3dView view;
 	double normal_threshold = 0.15;
 	int tang_samples = 3;
@@ -97,4 +118,12 @@ private:
 	std::list<MString> prev_curves;
 	std::list<std::pair<MPoint, MPoint>> prev_curve_start_end;
 	MString prev_surf;
+
+	std::list<DrawnCurve> drawn_curves;
+
+	std::list<EDAnchor> anchors; 
+	EDMath::PointCloud<float> anchors_2d;
+	std::unique_ptr<EDMath::KDTree2D> anchors_kd_2d = nullptr;
+
+
 };

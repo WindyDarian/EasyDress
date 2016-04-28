@@ -41,6 +41,11 @@
 #include <list>
 #include <vector>
 
+DrawnCurve::DrawnCurve(const MPoint & start, const MPoint & end, const MString & name)
+	: start(start), end(end), name(name)
+{}
+
+
 const int initialSize = 1024;
 const int increment = 256;
 const char helpString[] = "drag mouse to draw strokes";
@@ -60,9 +65,6 @@ int xycompare(coord *p1, coord *p2)
 }
 
 EasyDressTool::EasyDressTool()
-	: maxSize(0)
-	, num_points(0)
-	, lasso(NULL)
 {
 	setTitleString("EasyDress Sketch");
 }
@@ -100,15 +102,21 @@ MStatus EasyDressTool::doPress(MEvent & event, MHWRender::MUIDrawManager& drawMg
 	// Get the active 3D view.
 	//
 	view = M3dView::active3dView();
+	update_anchors();
 
-	// Create an array to hold the lasso points. Assume no mem failures
-	maxSize = initialSize;
-	lasso = (coord*)malloc(sizeof(coord) * maxSize);
+	//// Create an array to hold the lasso points. Assume no mem failures
+	//maxSize = initialSize;
+	//lasso = (coord*)malloc(sizeof(coord) * maxSize);
 
 	coord start;
 	event.getPosition(start.h, start.v);
-	num_points = 1;
-	lasso[0] = min = max = start;
+	//num_points = 1;
+	//lasso[0] = min = max = start;
+    stroke.clear();
+    stroke.push_back(start);
+    min = start;
+    max = start;
+
 
 	firstDraw = true;
 
@@ -155,40 +163,114 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	MItSelectionList iter(incomingList);
 	MPoint selectionPoint(0, 0, 0);
 
-    MFnMesh * selected_mesh = nullptr;
+	MFnMesh * selected_mesh = nullptr;
 
 	for (; !iter.isDone(); iter.next())
 	{
 		MDagPath dagPath;
 		auto stat = iter.getDagPath(dagPath);
 
-        if (stat)
-        {
+		if (stat)
+		{
 
-            if (dagPath.hasFn(MFn::kTransform))
-            {
-                MFnTransform fn(dagPath);
-                selectionPoint = fn.getTranslation(MSpace::kWorld);
-                dagPath.extendToShape();
-            }
+			if (dagPath.hasFn(MFn::kTransform))
+			{
+				MFnTransform fn(dagPath);
+				selectionPoint = fn.getTranslation(MSpace::kWorld);
+				dagPath.extendToShape();
+			}
 
-            if (dagPath.hasFn(MFn::kMesh))
-            {
-                MStatus stat_mesh;
-                selected_mesh = new MFnMesh(dagPath, &stat_mesh);
+			if (dagPath.hasFn(MFn::kMesh))
+			{
+				MStatus stat_mesh;
+				selected_mesh = new MFnMesh(dagPath, &stat_mesh);
 
-                if (stat_mesh)
-                {
-                    break;
-                }
-                else
-                {
-                    selected_mesh = nullptr;
-                    continue;
-                }
-            }
-        }
+				if (stat_mesh)
+				{
+					break;
+				}
+				else
+				{
+					selected_mesh = nullptr;
+					continue;
+				}
+			}
+		}
 	}
+
+
+
+	// TODO: rebuild kd-tree only when view is changed
+	rebuild_kd(selected_mesh);
+
+	MPoint dummy_start_point;
+	MPoint dummy_end_point;
+	auto tan_mode = drawMode == EDDrawMode::kTangent;
+	auto norm_mode = drawMode == EDDrawMode::kNormal;
+	create_curve(stroke, selected_mesh, false, false, dummy_start_point, dummy_end_point, tan_mode, norm_mode);
+
+	if (prev_curves.size() == 4) {
+		std::string surface_command;
+		surface_command.reserve(500);
+		surface_command.append("proc string __ed_draw_surf() { \n");
+		surface_command.append("string $slct[]=`ls- sl`;\n");
+		surface_command.append("select -r ");
+		std::list<std::string> curve_names;
+		while (!prev_curves.empty())
+		{
+			curve_names.push_back(prev_curves.front().asChar());
+			surface_command.append(prev_curves.front().asChar());
+			prev_curves.pop_front();
+			prev_curve_start_end.pop_front();
+			surface_command.append(" ");
+		}
+		surface_command.append(";\n");
+		surface_command.append("string $nurbssurf[] = `boundary -ch 1 -or 0 -ep 0 -rn 0 -po 0 -ept 0.01 ");
+		while (!curve_names.empty())
+		{
+			surface_command.append(" ");
+			surface_command.append("\"" + curve_names.front() + "\"");
+			curve_names.pop_front();
+		}
+		surface_command.append("`;\n");
+		surface_command.append("select $slct; \n");
+		surface_command.append("return $nurbssurf[0]; \n } \n");
+		surface_command.append("__ed_draw_surf();");
+		MGlobal::executeCommand(MString(surface_command.c_str()), prev_surf);
+	}
+
+	stroke.clear();
+
+	if (norm_mode && prev_surf != "")
+	{
+		// extrude previous surface;
+		float distance = (drawn_curves.back().start - drawn_curves.back().end).length();
+		std::string extrude_command;
+		extrude_command.reserve(500);
+
+		extrude_command.append("string $mesh_surf[]= `nurbsToPoly -mnd 1  -ch 1 -f 1 -pt 1 -pc 200 -chr 0.9 -ft 0.01 -mel 0.001 -d 0.1 -ut 1 -un 3 -vt 1 -vn 3 -uch 0 -ucr 0 -cht 0.01 -es 0 -ntr 0 -mrt 0 -uss 1 \"");
+		extrude_command.append(prev_surf.asChar());
+		extrude_command.append("\"`;\n");
+		extrude_command.append("polyExtrudeFacet -ltz " + std::to_string(distance) + " -constructionHistory 1 -keepFacesTogether 1 -divisions 4 -twist 0 -taper 1 -off 0 -thickness 0 -smoothingAngle 30 $mesh_surf[0];");
+		MGlobal::executeCommand(MString(extrude_command.c_str()));
+		//TODO: Move this out
+	}
+
+	if (selected_mesh)
+		delete selected_mesh;
+	selected_mesh = nullptr;
+
+	return MS::kSuccess;
+}
+
+MString EasyDressTool::create_curve(std::vector<coord>& screen_points, MFnMesh* selected_mesh, bool start_known, bool end_known, const MPoint & start_point, MPoint & end_point, bool tangent_mode, bool normal_mode)
+{
+	if (!selected_mesh)
+	{
+		return MString();
+	}
+
+	auto num_points = screen_points.size();
 
 	std::vector<MPoint> world_points;
 	world_points.reserve(num_points);
@@ -197,9 +279,6 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	std::vector<std::pair<MPoint, MVector>> rays;
 	rays.reserve(num_points);
 
-	// TODO: rebuild kd-tree only when view is changed
-	rebuild_kd(selected_mesh);
-
 	unsigned hit_count = 0;
 	// calculate points in world space
 	for (unsigned i = 0; i < num_points; i++)
@@ -207,173 +286,117 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		MPoint ray_origin;
 		MVector ray_direction;
 
-        view.viewToWorld(lasso[i].h, lasso[i].v, ray_origin, ray_direction);
+		view.viewToWorld(screen_points[i].h, screen_points[i].v, ray_origin, ray_direction);
 		rays.push_back(std::pair<MPoint, MVector>(ray_origin, ray_direction));
-        MPoint world_point;
-        bool hit = false;
+		MPoint world_point;
+		bool hit = false;
 
-        if (selected_mesh)
-        {
-            //MIntArray faceids;
-            MFloatPoint hit_point;
-            float hit_param;
-            int hit_face;
-            int hit_tri;
-            float hit_bary1;
-            float hit_bary2;
+		if (selected_mesh)
+		{
+			//MIntArray faceids;
+			MFloatPoint hit_point;
+			float hit_param;
+			int hit_face;
+			int hit_tri;
+			float hit_bary1;
+			float hit_bary2;
 
-            bool intersected = selected_mesh->closestIntersection(ray_origin,
-                ray_direction,
-                nullptr,
-                nullptr,
-                true,
-                MSpace::kWorld,
-                10000, // maxParam
-                false, // testBothDirections
-                nullptr,
-                hit_point,
-                &hit_param,
-                &hit_face,
-                &hit_tri,
-                &hit_bary1,
-                &hit_bary2
-                );
+			bool intersected = selected_mesh->closestIntersection(ray_origin,
+				ray_direction,
+				nullptr,
+				nullptr,
+				true,
+				MSpace::kWorld,
+				10000, // maxParam
+				false, // testBothDirections
+				nullptr,
+				hit_point,
+				&hit_param,
+				&hit_face,
+				&hit_tri,
+				&hit_bary1,
+				&hit_bary2
+				);
 
-            if (intersected)
-            {
-                world_point = hit_point;
-                hit = true;
+			if (intersected)
+			{
+				world_point = hit_point;
+				hit = true;
 				hit_count++;
-            }
-        }
+			}
+		}
 
-        if (!hit)
-        {
-			// project it to the plane where all points are on
-            // * is dot product
-            //world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction / ((selectionPoint - ray_origin).normal() * ray_direction);
-            //a          uto world_point = ray_origin + (selectionPoint - ray_origin).length() * ray_direction;
-			world_point = EDMath::projectOnPlane(selectionPoint, -ray_direction, ray_origin, ray_direction);
-        }
 		world_points.push_back(world_point);
 		hit_list.push_back(hit);
 	}
+
 
 	if (world_points.size() > 2)
 	{
 		bool projecting_normal = false;
 		if (hit_count == 0)
 		{
-			project_contour(world_points, hit_list, selected_mesh, rays);
+			project_contour(screen_points, world_points, hit_list, selected_mesh, rays);
 			// classify this curve as shell contour
 			setHelpString("Classified: Shell Contour!");
 
 			// TODO: SHAPE MATCHING!
 		}
-		else if ((is_normal(world_points, hit_list, selected_mesh) || drawMode == kNormal) && (hit_list[0] || hit_list[num_points - 1]))
+		else if ((is_normal(screen_points, world_points, hit_list, selected_mesh) || normal_mode) && (hit_list[0] || hit_list[num_points - 1]))
 		{
 			projecting_normal = true;
-			project_normal(world_points, hit_list, selected_mesh, rays);
+			project_normal(screen_points, world_points, hit_list, selected_mesh, rays);
 			setHelpString("Classified: Normal!");
 		}
-		//else if (is_tangent())
-		else if (drawMode == kTangent)
+		else if (tangent_mode)
 		{
 			// TODO: actually use is_tangent the same time as force tangent
-			project_tangent(world_points, hit_list, selected_mesh, rays);
+			project_tangent(screen_points, world_points, hit_list, selected_mesh, rays);
 			setHelpString("Classified: Tangent Plane!");
 		}
 		else
 		{
-			project_shell(world_points, hit_list, selected_mesh, rays);
+			project_shell(screen_points, world_points, hit_list, selected_mesh, rays);
 			setHelpString("Classified: Shell Projection!");
 		}
 
-		if (projecting_normal && prev_surf != "")
+		// create the curve
+		std::string curve_command;
+		curve_command.reserve(world_points.size() * 40 + 200);
+		curve_command.append("proc string __ed_draw_curve() { \n");
+		curve_command.append("string $slct[]=`ls- sl`;\n");
+		curve_command.append("string $cv = `curve");
+		for (auto & p : world_points)
 		{
-			// extrude previous surface;
-			float distance = (world_points[world_points.size() - 1] - world_points[0]).length();
-			std::string extrude_command;
-			extrude_command.reserve(500);
-
-			extrude_command.append("string $mesh_surf[]= `nurbsToPoly -mnd 1  -ch 1 -f 1 -pt 1 -pc 200 -chr 0.9 -ft 0.01 -mel 0.001 -d 0.1 -ut 1 -un 3 -vt 1 -vn 3 -uch 0 -ucr 0 -cht 0.01 -es 0 -ntr 0 -mrt 0 -uss 1 \"");
-			extrude_command.append(prev_surf.asChar());
-			extrude_command.append("\"`;\n");
-			extrude_command.append("polyExtrudeFacet -ltz " + std::to_string(distance) + " -constructionHistory 1 -keepFacesTogether 1 -divisions 4 -twist 0 -taper 1 -off 0 -thickness 0 -smoothingAngle 30 $mesh_surf[0];");
-			MGlobal::executeCommand(MString(extrude_command.c_str()));
+			curve_command.append(" -p ");
+			curve_command.append(std::to_string(p.x));
+			curve_command.append(" ");
+			curve_command.append(std::to_string(p.y));
+			curve_command.append(" ");
+			curve_command.append(std::to_string(p.z));
 		}
-		else
-		{
+		curve_command.append("`;\n");
+		// smooth the curve
+		curve_command.append("rebuildCurve -ch 1 -rpo 1 -rt 0 -end 1 -kr 0 -kcp 0 -kep 1 -kt 0 -s 8 -d 3 -tol 0.01 $cv; \n");
+		curve_command.append("select $slct; \n");
+		curve_command.append("return $cv; \n } \n");
+		curve_command.append("__ed_draw_curve();");
 
-			// create the curve
-			std::string curve_command;
-			curve_command.reserve(world_points.size() * 40 + 200);
-			curve_command.append("proc string __ed_draw_curve() { \n");
-			curve_command.append("string $slct[]=`ls- sl`;\n");
-			curve_command.append("string $cv = `curve");
-			for (auto & p : world_points)
-			{
-				curve_command.append(" -p ");
-				curve_command.append(std::to_string(p.x));
-				curve_command.append(" ");
-				curve_command.append(std::to_string(p.y));
-				curve_command.append(" ");
-				curve_command.append(std::to_string(p.z));
-			}
-			curve_command.append("`;\n");
-			// smooth the curve
-			curve_command.append("rebuildCurve -ch 1 -rpo 1 -rt 0 -end 1 -kr 0 -kcp 0 -kep 1 -kt 0 -s 8 -d 3 -tol 0.01 $cv; \n");
-			curve_command.append("select $slct; \n");
-			curve_command.append("return $cv; \n } \n");
-			curve_command.append("__ed_draw_curve();");
+		MString curve_name;
+		MGlobal::executeCommand(MString(curve_command.c_str()), curve_name);
+		drawn_curves.push_back(DrawnCurve(world_points[0], world_points[world_points.size() - 1], curve_name));
+		prev_curves.push_back(curve_name);
+		prev_curve_start_end.push_back(std::pair<MPoint, MPoint>(world_points[0], world_points[world_points.size() - 1]));
+		return MString();
 
-			MString curve_name;
-			MGlobal::executeCommand(MString(curve_command.c_str()), curve_name);
-			prev_curves.push_back(curve_name);
-			prev_curve_start_end.push_back(std::pair<MPoint, MPoint>(world_points[0], world_points[world_points.size() - 1]));
-			if (prev_curves.size() == 4) {
-				std::string surface_command;
-				surface_command.reserve(500);
-                surface_command.append("proc string __ed_draw_surf() { \n");
-				surface_command.append("string $slct[]=`ls- sl`;\n");
-				surface_command.append("select -r ");
-				std::list<std::string> curve_names;
-				while (!prev_curves.empty())
-				{
-					curve_names.push_back(prev_curves.front().asChar());
-					surface_command.append(prev_curves.front().asChar());
-					prev_curves.pop_front();
-					prev_curve_start_end.pop_front();
-					surface_command.append(" ");
-				}
-				surface_command.append(";\n");
-				surface_command.append("string $nurbssurf[] = `boundary -ch 1 -or 0 -ep 0 -rn 0 -po 0 -ept 0.01 ");
-				while (!curve_names.empty())
-				{
-					surface_command.append(" ");
-					surface_command.append("\"" + curve_names.front() + "\"");
-					curve_names.pop_front();
-				}
-				surface_command.append("`;\n");
-				surface_command.append("select $slct; \n");
-                surface_command.append("return $nurbssurf[0]; \n } \n");
-                surface_command.append("__ed_draw_surf();");
-				MGlobal::executeCommand(MString(surface_command.c_str()), prev_surf);
-			}
-		}
-		free(lasso);
-		lasso = (coord*)0;
-		maxSize = 0;
-		num_points = 0;
-
-		if (selected_mesh)
-			delete selected_mesh;
-		selected_mesh = nullptr;
 	}
-	return MS::kSuccess;
+	else
+	{
+		return MString();
+	}
 }
 
-bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list,
+bool EasyDressTool::is_normal(const std::vector<coord> & screen_points, const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list,
 	    const MFnMesh * selected_mesh) const
 {
 	if (!selected_mesh)
@@ -385,12 +408,14 @@ bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const st
 	{
 		// if starting point is normal
 		//unsigned sample_num = 0;
-		MPoint p0 = lasso[0].toMPoint();
+		auto num_points = screen_points.size();
+
+		MPoint p0 = screen_points[0].toMPoint();
 		MVector current_tang;
 		for (int i = 1; i < tang_samples; i++)
 		{
 			if (i >= num_points) break;
-			current_tang += lasso[i].toMPoint() - p0;
+			current_tang += screen_points[i].toMPoint() - p0;
 			//sample_num++;
 		}
 		current_tang.normalize();
@@ -416,41 +441,42 @@ bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const st
 
 }
 
-bool EasyDressTool::is_tangent()const
-{
-	// FIXME: curvature has problems.
-	// not very using this function since I am just using SHIFT to force tangent
-	double menger_curvature = 0;
-    unsigned valid_points = 0;
-	for (int i = 0; i < num_points-2; i++){
-        MPoint x = lasso[i].toMPoint();
-		MPoint y = lasso[i + 1].toMPoint();
-		MPoint z = lasso[i + 2].toMPoint();
-		MVector xy = x - y;
-		MVector zy = z - y;
-		MVector zx = z - x;
-		double area = (xy^zy).length();
+//bool EasyDressTool::is_tangent()const
+//{
+//	// FIXME: curvature has problems.
+//	// not very using this function since I am just using SHIFT to force tangent
+//	auto num_points = stroke.size();
+//	double menger_curvature = 0;
+//    unsigned valid_points = 0;
+//	for (int i = 0; i < num_points - 2; i++){
+//        MPoint x = stroke[i].toMPoint();
+//		MPoint y = stroke[i + 1].toMPoint();
+//		MPoint z = stroke[i + 2].toMPoint();
+//		MVector xy = x - y;
+//		MVector zy = z - y;
+//		MVector zx = z - x;
+//		double area = (xy^zy).length();
+//
+//        if (xy.length() == 0 && zy.length() == 0 && zx.length() == 0){
+//            continue;
+//        }
+//
+//		if (xy.length() != 0 && zy.length() != 0 && zx.length() != 0){
+//			menger_curvature += 4 * area / (xy.length()*zy.length()*zx.length());
+//		}
+//        valid_points += 1;
+//	}
+//
+//    if (valid_points == 0) return false;
+//
+//	menger_curvature /= valid_points;
+//	if (menger_curvature <= 0.2){
+//		return true;
+//	}
+//	return false;
+//}
 
-        if (xy.length() == 0 && zy.length() == 0 && zx.length() == 0){
-            continue;
-        }
-
-		if (xy.length() != 0 && zy.length() != 0 && zx.length() != 0){
-			menger_curvature += 4 * area / (xy.length()*zy.length()*zx.length());
-		}
-        valid_points += 1;
-	}
-
-    if (valid_points == 0) return false;
-
-	menger_curvature /= valid_points;
-	if (menger_curvature <= 0.2){
-		return true;
-	}
-	return false;
-}
-
-void EasyDressTool::project_normal(std::vector<MPoint>& world_points, const std::vector<bool>& hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
+void EasyDressTool::project_normal(std::vector<coord> & screen_points, std::vector<MPoint>& world_points, const std::vector<bool>& hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
 {
 	if (!selected_mesh)
 	{
@@ -510,7 +536,7 @@ MPoint EasyDressTool::find_point_nearest_to_mesh(const MFnMesh * selected_mesh, 
 
 
 
-void EasyDressTool::project_contour(std::vector<MPoint>& world_points, const std::vector<bool>& hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>>& rays)
+void EasyDressTool::project_contour(std::vector<coord> & screen_points, std::vector<MPoint>& world_points, const std::vector<bool>& hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>>& rays)
 {
 	if (!selected_mesh || !kd_2d || world_points.size() < 2)
 	{
@@ -522,8 +548,8 @@ void EasyDressTool::project_contour(std::vector<MPoint>& world_points, const std
 
 	auto length = rays.size();
 	float dummy;
-	auto s0 = find_point_nearest_to_mesh(selected_mesh, rays[0].first, rays[0].second, lasso[0], dummy);
-	auto sn = find_point_nearest_to_mesh(selected_mesh, rays[length - 1].first, rays[length - 1].second, lasso[length - 1], dummy);
+	auto s0 = find_point_nearest_to_mesh(selected_mesh, rays[0].first, rays[0].second, screen_points[0], dummy);
+	auto sn = find_point_nearest_to_mesh(selected_mesh, rays[length - 1].first, rays[length - 1].second, screen_points[length - 1], dummy);
 
 
 	if (drawing_quad)
@@ -567,7 +593,7 @@ double interpolate_height(const MPoint& p, const MPoint& p_start, const MPoint& 
 ///                 
 // Shell Projection
 ///
-void EasyDressTool::project_shell(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
+void EasyDressTool::project_shell(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
 {
 	// TODO: for intersection: find all points in distance 2h
 	// TODO: get all triangles connected to the points by MFnMesh:getTriangles()
@@ -589,12 +615,12 @@ void EasyDressTool::project_shell(std::vector<MPoint> & world_points, const std:
 
 	if (!hit_list[0])
 	{
-		world_points[0] = find_point_nearest_to_mesh(selected_mesh, rays[0].first, rays[0].second, lasso[0], start_height);
+		world_points[0] = find_point_nearest_to_mesh(selected_mesh, rays[0].first, rays[0].second, screen_points[0], start_height);
 	}
 
 	if (!hit_list[length - 1])
 	{
-		world_points[length - 1] = find_point_nearest_to_mesh(selected_mesh, rays[length - 1].first, rays[length - 1].second, lasso[length - 1], end_height);
+		world_points[length - 1] = find_point_nearest_to_mesh(selected_mesh, rays[length - 1].first, rays[length - 1].second, screen_points[length - 1], end_height);
 	}
 
 	if (drawing_quad)
@@ -658,7 +684,7 @@ void EasyDressTool::project_shell(std::vector<MPoint> & world_points, const std:
 	}
 }
 // tangent projection
-void EasyDressTool::project_tangent(std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
+void EasyDressTool::project_tangent(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays)
 {
 	if (!selected_mesh || !kd_2d || world_points.size() < 2) {
 		return;
@@ -688,7 +714,7 @@ void EasyDressTool::project_tangent(std::vector<MPoint> & world_points, const st
 	//assume the average height is the height of the middle point
 	float h = 0.0;
 	int mid_index = int(length / 2);
-	MPoint nearest_point = find_point_nearest_to_mesh(selected_mesh, rays[mid_index].first, rays[mid_index].second, lasso[mid_index], h);
+	MPoint nearest_point = find_point_nearest_to_mesh(selected_mesh, rays[mid_index].first, rays[mid_index].second, screen_points[mid_index], h);
 	MPoint middle_point = (-rays[mid_index].second)*h + world_points[mid_index];
 
 	//project each stroke points on the base layer and get each normal
@@ -753,14 +779,16 @@ void EasyDressTool::append_lasso(short x, short y)
 	int		cy, iy, ix, ydif, yinc, i;
 	float	fx, xinc;
 
-	iy = (int)lasso[num_points - 1].v;
-	ix = (int)lasso[num_points - 1].h;
+	auto num_points = stroke.size();
+
+	iy = (int)stroke[num_points - 1].v;
+	ix = (int)stroke[num_points - 1].h;
 	ydif = abs(y - iy);
 	if (ydif == 0)
 		return;
 
 	// Keep track of smallest rectangular area of the screen that
-	// completely contains the lasso.
+	// completely contains the stroke.
 	if (min.h > x)
 		min.h = x;
 	if (max.h < x)
@@ -779,22 +807,12 @@ void EasyDressTool::append_lasso(short x, short y)
 	fx = (float)ix + xinc;
 	cy = iy + yinc;
 	for (i = 0; i < ydif; i++) {
+		coord new_coord;
+		new_coord.h = (short)fx;
+		new_coord.v = (short)cy;
 
-		if (num_points >= maxSize) {
-			// Make the array of lasso points bigger
-			maxSize += increment;
+		stroke.push_back(new_coord);
 
-			// If realloc() fails, it returns NULL but keeps the old block
-			// of memory around, so let's not overwrite the contents of
-			// 'lasso' until we know that realloc() worked.
-			coord* newLasso = (coord*)realloc(lasso, sizeof(coord) * maxSize);
-			if (newLasso == NULL) return;
-
-			lasso = newLasso;
-		}
-
-		lasso[num_points].h = (short)fx;
-		lasso[num_points].v = (short)cy;
 		fx += xinc;
 		cy += yinc;
 		num_points++;
@@ -803,12 +821,41 @@ void EasyDressTool::append_lasso(short x, short y)
 	return;
 }
 
+void EasyDressTool::update_anchors()
+{
+	anchors.clear();
+	anchors_2d.clear();
+	for (auto & curve : drawn_curves)
+	{
+		short x, y;
+		view.worldToView(curve.start, x, y);
+		anchors.push_back(EDAnchor(MPoint(x, y), curve.start));
+		anchors_2d.pts.push_back(EDMath::PointCloud<float>::Point(x, y, 0));
+		view.worldToView(curve.end, x, y);
+		anchors.push_back(EDAnchor(MPoint(x, y), curve.end));
+		anchors_2d.pts.push_back(EDMath::PointCloud<float>::Point(x, y, 0));
+	}
+	anchors_kd_2d.reset(new EDMath::KDTree2D(2 /*dim*/, anchors_2d, nanoflann::KDTreeSingleIndexAdaptorParams(10)));
+	anchors_kd_2d->buildIndex();
+}
+
 void EasyDressTool::draw_stroke(MHWRender::MUIDrawManager& drawMgr)
 {
+	auto num_points = stroke.size();
+	MColor curve_color(0.1f, 0.13f, 0.95f);
+	MColor anchor_color(0.9f, 0.1f, 0.5f);
 	drawMgr.beginDrawable();
+	drawMgr.setColor(curve_color);
+	drawMgr.setLineWidth(3);
 	for (unsigned i = 1; i < num_points; i++)
 	{
-		drawMgr.line2d(MPoint(lasso[i - 1].h, lasso[i - 1].v), MPoint(lasso[i].h, lasso[i].v));
+		drawMgr.line2d(MPoint(stroke[i - 1].h, stroke[i - 1].v), MPoint(stroke[i].h, stroke[i].v));
+	}
+	drawMgr.setColor(anchor_color);
+	drawMgr.setLineWidth(1);
+	for (auto & anchor : anchors)
+	{
+		drawMgr.circle2d(anchor.point_2D, 4, false);
 	}
 	drawMgr.endDrawable();
 }
