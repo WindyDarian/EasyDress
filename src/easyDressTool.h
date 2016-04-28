@@ -72,12 +72,12 @@ public:
 	virtual			~EasyDressTool();
 	void*			creator();
 
-	virtual void toolOnSetup(MEvent & event);
+	virtual void toolOnSetup(MEvent & event) override;
 	// using Viewport 2.0 of Maya
-	virtual MStatus	doPress(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context);
-	virtual MStatus	doDrag(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context);
-	virtual MStatus	doRelease(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context);
-	virtual void completeAction();
+	virtual MStatus	doPress(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context) override;
+	virtual MStatus	doDrag(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context) override;
+	virtual MStatus	doRelease(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context) override;
+	virtual void completeAction() override;
 
 private:
 	void append_lasso(short x, short y);

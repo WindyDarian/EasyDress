@@ -263,6 +263,10 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 	return MS::kSuccess;
 }
 
+void EasyDressTool::completeAction()
+{
+}
+
 MString EasyDressTool::create_curve(std::vector<coord>& screen_points, MFnMesh* selected_mesh, bool start_known, bool end_known, const MPoint & start_point, MPoint & end_point, bool tangent_mode, bool normal_mode)
 {
 	if (!selected_mesh)
