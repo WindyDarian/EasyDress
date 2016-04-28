@@ -137,7 +137,7 @@ MStatus EasyDressTool::doDrag(MEvent & event, MHWRender::MUIDrawManager& drawMgr
 	return MS::kSuccess;
 }
 
-MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context)
+MStatus EasyDressTool::doRelease(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context)
 // Selects objects within the lasso
 {
 	MStatus							stat;
@@ -331,7 +331,7 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 			MGlobal::executeCommand(MString(curve_command.c_str()), curve_name);
 			prev_curves.push_back(curve_name);
 			prev_curve_start_end.push_back(std::pair<MPoint, MPoint>(world_points[0], world_points[world_points.size() - 1]));
-			if (prev_curves.size() == 4) {
+			/*if (prev_curves.size() == 4) {
 				std::string surface_command;
 				surface_command.reserve(500);
                 surface_command.append("proc string __ed_draw_surf() { \n");
@@ -356,10 +356,10 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 				}
 				surface_command.append("`;\n");
 				surface_command.append("select $slct; \n");
-                surface_command.append("return $nurbssurf[0]; \n } \n");
+                surface_command.append("return f[0]; \n } \n");
                 surface_command.append("__ed_draw_surf();");
 				MGlobal::executeCommand(MString(surface_command.c_str()), prev_surf);
-			}
+			}*/
 		}
 		free(lasso);
 		lasso = (coord*)0;
@@ -371,6 +371,35 @@ MStatus EasyDressTool::doRelease(MEvent & /*event*/, MHWRender::MUIDrawManager& 
 		selected_mesh = nullptr;
 	}
 	return MS::kSuccess;
+}
+void EasyDressTool::completeAction(){
+	std::string surface_command;
+	surface_command.reserve(500);
+	surface_command.append("proc string __ed_draw_surf() { \n");
+	surface_command.append("string $slct[]=`ls- sl`;\n");
+	surface_command.append("select -r ");
+	std::list<std::string> curve_names;
+	while (!prev_curves.empty())
+	{
+		curve_names.push_back(prev_curves.front().asChar());
+		surface_command.append(prev_curves.front().asChar());
+		prev_curves.pop_front();
+		prev_curve_start_end.pop_front();
+		surface_command.append(" ");
+	}
+	surface_command.append(";\n");
+	surface_command.append("string $nurbssurf[] = `boundary -ch 1 -or 0 -ep 0 -rn 0 -po 0 -ept 0.01 ");
+	while (!curve_names.empty())
+	{
+		surface_command.append(" ");
+		surface_command.append("\"" + curve_names.front() + "\"");
+		curve_names.pop_front();
+	}
+	surface_command.append("`;\n");
+	surface_command.append("select $slct; \n");
+	surface_command.append("return f[0]; \n } \n");
+	surface_command.append("__ed_draw_surf();");
+	MGlobal::executeCommand(MString(surface_command.c_str()), prev_surf);
 }
 
 bool EasyDressTool::is_normal(const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list,
