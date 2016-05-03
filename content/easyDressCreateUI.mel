@@ -50,7 +50,7 @@ window -title "EasyDress" -widthHeight 400 400 myWindow;
             button -l "Cancel" -command "cancelUI()";
        setParent ..;
     setParent ..;
-    frameLayout -l "Layer Management";
+    /*frameLayout -l "Layer Management";
        columnLayout;
            text -l "Create and edit Layers";
            rowLayout -nc 2 -cw2 320 100;
@@ -69,7 +69,7 @@ window -title "EasyDress" -widthHeight 400 400 myWindow;
                       button -label "Delete Layer" -command "deleteLayer()";
                   setParent ..;
                setParent ..;
-       setParent ..;
+       setParent ..;*/
 
 
 showWindow myWindow;

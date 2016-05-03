@@ -32,6 +32,7 @@
 #include <memory>
 
 class MFnMesh;
+class EDAnchor;
 
 class coord {
 public:
@@ -52,6 +53,9 @@ struct DrawnCurve
 	MPoint start;
 	MPoint end;
 	MString name;
+	
+	EDAnchor* start_anchor;
+	EDAnchor* end_anchor;
 
 	DrawnCurve(const MPoint & start, const MPoint & end, const MString & name);
 };
@@ -62,6 +66,7 @@ struct EDAnchor
 	MPoint point_2D;
 	MPoint point_3D;
 
+	EDAnchor() = default;
 	EDAnchor(const MPoint & point_2D, const MPoint & point_3D) : point_2D(point_2D), point_3D(point_3D) {}
 };
 
@@ -77,19 +82,25 @@ public:
 	virtual MStatus	doPress(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context) override;
 	virtual MStatus	doDrag(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context) override;
 	virtual MStatus	doRelease(MEvent & event, MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context) override;
+	virtual MStatus drawFeedback(MHWRender::MUIDrawManager& drawMgr, const MHWRender::MFrameContext& context) override;
 	virtual void completeAction() override;
+	virtual void deleteAction() override;
 
 private:
-	void append_lasso(short x, short y);
+
+	void clear_quad_cache();
+	void append_stroke(short x, short y);
 	void update_anchors();
 	void draw_stroke(MHWRender::MUIDrawManager& drawMgr);
+	//void draw_anchors(MHWRender::MUIDrawManager& drawMgr);
 	bool is_normal(const std::vector<coord> & screen_points, const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh) const;
 	//bool is_tangent() const;
+	size_t do_snap(const MPoint & input_end_point);
 	MString create_curve(std::vector<coord> & screen_points, MFnMesh* selected_mesh, bool start_known, bool end_known, const MPoint& start_point, MPoint& end_point, bool tangent_mode = false, bool normal_mode = false);
-	void project_normal(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
-	void project_tangent(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
-	void project_contour(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
-	void project_shell(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays);
+	void project_normal(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
+	void project_tangent(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
+	void project_contour(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
+	void project_shell(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
 	MPoint find_point_nearest_to_mesh(const MFnMesh * selected_mesh, const MPoint & ray_origin, const MVector & ray_direction, const coord & screen_coord, float & ret_height) const;
 	void rebuild_kd_2d();
 	//void rebuild_kd_3d();
@@ -121,9 +132,11 @@ private:
 
 	std::list<DrawnCurve> drawn_curves;
 
-	std::list<EDAnchor> anchors; 
+	std::vector<EDAnchor> anchors; 
 	EDMath::PointCloud<float> anchors_2d;
 	std::unique_ptr<EDMath::KDTree2D> anchors_kd_2d = nullptr;
 
-
+	bool first_anchored = false;
+	EDAnchor first_anchor;
+	std::list<MString> drawn_shapes;
 };
