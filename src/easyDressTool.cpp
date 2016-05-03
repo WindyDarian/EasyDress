@@ -120,8 +120,8 @@ MStatus EasyDressTool::doPress(MEvent & event, MHWRender::MUIDrawManager& drawMg
 	if (snap_anchor_index > 0 && snap_anchor_index < anchors.size())
 	{
 		first_anchor = anchors[snap_anchor_index];
-		start.h = static_cast<short>(first_anchor.point_2D.x);
-		start.v = static_cast<short>(first_anchor.point_2D.y);
+		start.h = static_cast<short>(first_anchor->point_2D.x);
+		start.v = static_cast<short>(first_anchor->point_2D.y);
 		first_anchored = true;
 	}
 	
@@ -202,9 +202,10 @@ MStatus EasyDressTool::doRelease(MEvent & event, MHWRender::MUIDrawManager& draw
 		if (snap_anchor_index > 0 && snap_anchor_index < anchors.size())
 		{
 			auto& acr = anchors[snap_anchor_index];
-			append_stroke(static_cast<short>(acr.point_2D.x), static_cast<short>(acr.point_2D.y));
+			append_stroke(static_cast<short>(acr->point_2D.x), static_cast<short>(acr->point_2D.y));
 			last_point_known = true;
-			last_world_point = acr.point_3D;
+			last_world_point = acr->point_3D;
+            last_anchor = acr;
 		}
 	}
 	if (!first_point_known)
@@ -212,7 +213,7 @@ MStatus EasyDressTool::doRelease(MEvent & event, MHWRender::MUIDrawManager& draw
 		if (first_anchored)
 		{
 			first_point_known = true;
-			first_world_point = first_anchor.point_3D;
+			first_world_point = first_anchor->point_3D;
 		}
 	}
 
@@ -321,6 +322,8 @@ MStatus EasyDressTool::doRelease(MEvent & event, MHWRender::MUIDrawManager& draw
 
 	stroke.clear();
 	first_anchored = false;
+    first_anchor = nullptr;
+    last_anchor = nullptr;
 
 	if (selected_mesh)
 		delete selected_mesh;
@@ -514,7 +517,20 @@ MString EasyDressTool::create_curve(std::vector<coord>& screen_points, MFnMesh* 
 			prev_curve_start_end.push_back(std::pair<MPoint, MPoint>(world_points[0], world_points[world_points.size() - 1]));
 		}
 
-		drawn_curves.push_back(DrawnCurve(world_points[0], world_points[world_points.size() - 1], curve_name));
+        auto cv = DrawnCurve(world_points[0], world_points[world_points.size() - 1], curve_name);
+        cv.start_anchor = first_anchor;
+        cv.end_anchor = last_anchor;
+        MPoint dummypoint2D;
+        if (!cv.start_anchor)
+        {
+            cv.start_anchor.reset(new EDAnchor(dummypoint2D, cv.start));
+        }
+        if (!cv.end_anchor)
+        {
+            cv.end_anchor.reset(new EDAnchor(dummypoint2D, cv.end));
+        }
+		drawn_curves.push_back(cv);
+        
 		drawn_shapes.push_back(curve_name);
 		return curve_name;
 
@@ -934,10 +950,12 @@ void EasyDressTool::update_anchors()
 	{
 		short x, y;
 		view.worldToView(curve.start, x, y);
-		anchors.push_back(EDAnchor(MPoint(x, y), curve.start));
+        curve.start_anchor->point_2D = MPoint(x, y, 0);
+		anchors.push_back(curve.start_anchor);
 		anchors_2d.pts.push_back(EDMath::PointCloud<float>::Point(x, y, 0));
 		view.worldToView(curve.end, x, y);
-		anchors.push_back(EDAnchor(MPoint(x, y), curve.end));
+        curve.end_anchor->point_2D = MPoint(x, y, 0);
+        anchors.push_back(curve.end_anchor);
 		anchors_2d.pts.push_back(EDMath::PointCloud<float>::Point(x, y, 0));
 	}
 	anchors_kd_2d.reset(new EDMath::KDTree2D(2 /*dim*/, anchors_2d, nanoflann::KDTreeSingleIndexAdaptorParams(10)));
@@ -960,7 +978,7 @@ void EasyDressTool::draw_stroke(MHWRender::MUIDrawManager& drawMgr)
 	drawMgr.setLineWidth(1);
 	for (auto & anchor : anchors)
 	{
-		drawMgr.circle2d(anchor.point_2D, 4, false);
+		drawMgr.circle2d(anchor->point_2D, 4, false);
 	}
 	drawMgr.endDrawable();
 }

@@ -54,8 +54,8 @@ struct DrawnCurve
 	MPoint end;
 	MString name;
 	
-	EDAnchor* start_anchor;
-	EDAnchor* end_anchor;
+	std::shared_ptr<EDAnchor> start_anchor = nullptr;
+	std::shared_ptr<EDAnchor> end_anchor = nullptr;
 
 	DrawnCurve(const MPoint & start, const MPoint & end, const MString & name);
 };
@@ -132,11 +132,12 @@ private:
 
 	std::list<DrawnCurve> drawn_curves;
 
-	std::vector<EDAnchor> anchors; 
+	std::vector<std::shared_ptr<EDAnchor>> anchors; 
 	EDMath::PointCloud<float> anchors_2d;
 	std::unique_ptr<EDMath::KDTree2D> anchors_kd_2d = nullptr;
 
 	bool first_anchored = false;
-	EDAnchor first_anchor;
+    std::shared_ptr<EDAnchor> first_anchor = nullptr;
+    std::shared_ptr<EDAnchor> last_anchor = nullptr;
 	std::list<MString> drawn_shapes;
 };
