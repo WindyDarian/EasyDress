@@ -97,7 +97,9 @@ private:
 	//bool is_tangent() const;
 	size_t do_snap(const MPoint & input_end_point);
 	MString create_curve(std::vector<coord> & screen_points, MFnMesh* selected_mesh, bool start_known, bool end_known, const MPoint& start_point, MPoint& end_point, bool tangent_mode = false, bool normal_mode = false);
-	void project_normal(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
+    MString create_surface_from_loop(DrawnCurve& cv);
+    std::list<MString> search_loop_from(DrawnCurve &cv, int current_depth, std::list<MString>& loop_list);
+    void project_normal(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
 	void project_tangent(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
 	void project_contour(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
 	void project_shell(std::vector<coord> & screen_points, std::vector<MPoint> & world_points, const std::vector<bool> & hit_list, const MFnMesh * selected_mesh, std::vector<std::pair<MPoint, MVector>> & rays, bool first_point_known, bool last_point_known);
@@ -105,6 +107,8 @@ private:
 	void rebuild_kd_2d();
 	//void rebuild_kd_3d();
 	void rebuild_kd(const MFnMesh * selected_mesh);
+    
+
 
 	bool drawing_quad = true;
 	bool firstDraw;
@@ -126,9 +130,11 @@ private:
 
 	// kd tree for finding nearest point on mesh
 	std::unique_ptr<EDMath::KDTree2D> kd_2d = nullptr;
+
+    // TODO: delete these hack
 	std::list<MString> prev_curves;
 	std::list<std::pair<MPoint, MPoint>> prev_curve_start_end;
-	MString prev_surf;
+    MString prev_surf;
 
 	std::list<DrawnCurve> drawn_curves;
 

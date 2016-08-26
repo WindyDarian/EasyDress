@@ -541,6 +541,27 @@ MString EasyDressTool::create_curve(std::vector<coord>& screen_points, MFnMesh* 
 	}
 }
 
+MString EasyDressTool::create_surface_from_loop(DrawnCurve& cv)
+{
+    std::list<MString> loop;
+    search_loop_from(cv, 0, loop);
+	return MString();
+}
+
+void EasyDressTool::search_loop_from(DrawnCurve &cv, int current_depth, std::list<MString>& loop_list)
+{
+    for (auto& cv2 : drawn_curves)
+    {
+        if (cv.name == cv2.name) continue;
+        
+        if (cv.end_anchor == cv2.start_anchor)
+        {
+            current_depth++;
+            search_loop_from(cv2, current_depth, loop_list);
+        }
+    }
+}
+
 bool EasyDressTool::is_normal(const std::vector<coord> & screen_points, const std::vector<MPoint> & world_points, const std::vector<bool> & hit_list,
 	    const MFnMesh * selected_mesh) const
 {
